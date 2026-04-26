@@ -126,7 +126,7 @@ profile_default/
 ipython_config.py
 
 # pyenv / version managers
-.python-version
+# .python-version is committed — CI needs it to resolve the Python version
 
 # pipenv / poetry / pdm (not used, but guard against accidental commits)
 Pipfile.lock
