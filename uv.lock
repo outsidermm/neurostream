@@ -1238,6 +1238,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "identify" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -1259,6 +1260,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "identify", specifier = ">=2.6.19" },
     { name = "mypy", specifier = ">=1.20.1" },
     { name = "pre-commit", specifier = ">=4.5.1" },
     { name = "pytest", specifier = ">=9.0.3" },
