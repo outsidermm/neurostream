@@ -1,0 +1,26 @@
+name: CI
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: astral-sh/setup-uv@v7
+      with:
+        version: "0.5.11"
+        enable-cache: true
+        version-file: .python-version
+
+    - run: uv sync --locked --all-groups
+
+    - name: Ruff linting
+      run: uv run ruff check .
+
+    - name: Mypy type checking
+      run: uv run mypy .
+
+    - name: Tests
+      run: uv run pytest -q
