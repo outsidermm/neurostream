@@ -1,0 +1,103 @@
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python build artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Test and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+
+# Type checker caches
+.mypy_cache/
+.dmypy.json
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Hydra outputs (config management — Phase 1 dep)
+outputs/
+multirun/
+
+# Logs
+*.log
+logs/
+
+# ML data and artifacts
+data/
+mlruns/
+mlflow.db
+checkpoints/
+wandb/
+
+# C++ build artifacts (Phase 3 prep)
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+*.o
+*.obj
+*.a
+*.dylib
+*.dll
+
+# Environment / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.swn
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows (in case anyone clones on Windows)
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Docs build artifacts
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# Misc backup files
+*.bak
+*.backup
+*.tmp
