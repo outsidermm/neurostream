@@ -26,6 +26,7 @@ dev = [
     "jupyterlab>=4.5.7",
     "matplotlib>=3.10.9",
     "mypy>=1.20.1",
+    "nbstripout>=0.9.1",
     "pre-commit>=4.5.1",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
