@@ -120,6 +120,7 @@ dmypy.json
 */.ipynb_checkpoints/*
 profile_default/
 ipython_config.py
+*-checkpoint.ipynb
 
 # IPython
 profile_default/
