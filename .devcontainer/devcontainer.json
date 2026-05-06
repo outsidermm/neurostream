@@ -21,7 +21,10 @@
         "charliermarsh.ruff",
         "ms-vscode.cpptools",
         "github.vscode-github-actions",
-        "tamasfe.even-better-toml"
+        "tamasfe.even-better-toml",
+        "ms-python.mypy-type-checker",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-renderers"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/opt/venv/bin/python",
