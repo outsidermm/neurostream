@@ -22,7 +22,7 @@ SFREQ = 250
 # Window relative to cue onset. BCI IV 2a recordings end exactly 5.908 s after
 # the last cue across every training session, so a 6.0 s tmax drops the final
 # trial as TOO_SHORT. 5.9 s sits inside that margin and keeps all 288 trials.
-TMIN, TMAX = 2.0, 5.9
+TMIN, TMAX = 0, 3.9
 
 
 def _cache_path(subject_id: int, session: str) -> Path:
