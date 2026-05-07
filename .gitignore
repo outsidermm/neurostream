@@ -7,7 +7,8 @@
 # Project-specific
 # -----------------------------------------------------------------------------
 # Never commit datasets or derived artifacts
-data/
+data/raw
+data/processed
 !data/.gitkeep
 datasets/
 *.gdf
