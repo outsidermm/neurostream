@@ -7,7 +7,8 @@
 # Project-specific
 # -----------------------------------------------------------------------------
 # Never commit datasets or derived artifacts
-data/
+data/raw
+data/processed
 !data/.gitkeep
 datasets/
 *.gdf
@@ -120,6 +121,7 @@ dmypy.json
 */.ipynb_checkpoints/*
 profile_default/
 ipython_config.py
+*-checkpoint.ipynb
 
 # IPython
 profile_default/
