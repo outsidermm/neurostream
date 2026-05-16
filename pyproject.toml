@@ -25,6 +25,8 @@ markers = [
     "slow: tests that take more than a few seconds (run with `pytest -m slow`)",
 ]
 
+addopts = "-m 'not slow'"
+
 [dependency-groups]
 dev = [
     "identify>=2.6.19",
