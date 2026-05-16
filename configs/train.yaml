@@ -1,0 +1,42 @@
+seed: 42
+subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+model:
+  n_classes: 4
+  n_channels: 22
+  fs: 250
+  f1: 8
+  d: 2
+  dropout: 0.5
+  # n_samples is derived from the loaded data — do not pin here
+
+preprocessing:
+  bandpass:
+    low_hz: 4.0
+    high_hz: 40.0
+    fs_hz: 250.0
+    order: 4
+
+training:
+  epochs: 300
+  batch_size: 16
+  lr: 0.001
+  weight_decay: 0.0
+
+split:
+  # Committed within-subject split — same trial indices applied to every subject
+  path: src/neurostream/data/bci_iv_2a_v1.json
+
+paths:
+  checkpoints_dir: outputs/checkpoints
+  pipelines_dir: outputs/pipelines
+
+mlflow:
+  tracking_uri: file:./mlruns
+  experiment_name: eegnet-baseline
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
