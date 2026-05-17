@@ -32,7 +32,7 @@ def test_overfit_single_subject() -> None:
     epochs_arr, labels_arr = load_subject(subject_id=1, session="T")
 
     # Preprocessing: fit on full training session (no val split for overfit check)
-    bandpass = BandpassParams(low_hz=4.0, high_hz=40.0, fs_hz=250.0, order=4)
+    bandpass = BandpassParams(low_hz=4.0, high_hz=40.0, fs_hz=128.0, order=4)
     pipeline = fit_pipeline(epochs_arr, config=PipelineConfig(bandpass=bandpass))
     X = pipeline.transform(epochs_arr)
 

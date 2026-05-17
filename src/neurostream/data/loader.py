@@ -16,7 +16,9 @@ DATA_CACHE = Path(
 
 _DATASET = "bci_iv_2a"
 
-CACHE_VERSION = "v2"  # bump when loader logic changes (v2: dropped EOG channels)
+CACHE_VERSION = "v3"  # bump when loader logic changes
+# v2: dropped EOG channels
+# v3: resampled to 128 Hz + window narrowed to [0.5, 2.5] s (match Lawhern 2018)
 
 EOG_CHANNELS = ("EOG-left", "EOG-central", "EOG-right")
 
@@ -25,11 +27,10 @@ CUE_TRAIN_IDS = {"769": 0, "770": 1, "771": 2, "772": 3}  # left, right, feet, t
 # Session E: every trial is annotated with the same "unknown cue" code.
 # The true classes live in a sibling A0XE.mat file (classlabel: int 1..4).
 CUE_TEST_ID = "783"
-SFREQ = 250
-# Window relative to cue onset. BCI IV 2a recordings end exactly 5.908 s after
-# the last cue across every training session, so a 6.0 s tmax drops the final
-# trial as TOO_SHORT. 5.9 s sits inside that margin and keeps all 288 trials.
-TMIN, TMAX = 0, 3.9
+
+# Match Lawhern et al. 2018: resample 250 → 128 Hz, epoch [0.5, 2.5] s post-cue.
+TARGET_SFREQ = 128
+TMIN, TMAX = 0.5, 2.5
 
 
 def _cache_path(subject_id: int, session: str) -> Path:
@@ -76,6 +77,10 @@ def _load_from_gdf(
     # GDF marks every channel as "eeg" — relabel EOG so picks="eeg" drops them
     raw.set_channel_types({name: "eog" for name in EOG_CHANNELS})
 
+    # Resample BEFORE event extraction so event sample indices line up with the
+    # new sfreq. Annotations stay attached; MNE shifts them automatically.
+    raw.resample(TARGET_SFREQ, verbose="ERROR")
+
     events, event_id_map = mne.events_from_annotations(raw, verbose="ERROR")
     if session == "T":
         cue_codes = {k: v for k, v in event_id_map.items() if k in CUE_TRAIN_IDS}
@@ -89,7 +94,7 @@ def _load_from_gdf(
         events,
         event_id=cue_codes,
         tmin=TMIN,
-        tmax=TMAX - 1.0 / SFREQ,
+        tmax=TMAX - 1.0 / TARGET_SFREQ,
         picks="eeg",
         baseline=None,
         preload=True,
