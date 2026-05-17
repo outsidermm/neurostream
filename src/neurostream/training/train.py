@@ -25,7 +25,6 @@ from typing import Any
 import flatdict
 import hydra
 import mlflow
-import mlflow.pytorch
 import numpy as np
 import torch
 import torch.nn as nn
