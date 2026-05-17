@@ -268,19 +268,10 @@ def _flatten_for_mlflow(d: dict[Any, Any]) -> dict[str, Any]:
     return {str(k): v for k, v in flatdict.FlatDict(d, delimiter=".").items()}
 
 
-def _pick_device() -> torch.device:
-    """CUDA if present, else Apple MPS, else CPU."""
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-    if torch.backends.mps.is_available():
-        return torch.device("mps")
-    return torch.device("cpu")
-
-
 @hydra.main(version_base=None, config_path="../../../configs", config_name="train")
 def main(cfg: DictConfig) -> None:
     set_deterministic_seed(cfg.seed)
-    device = _pick_device()
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoints_dir = Path(to_absolute_path(cfg.paths.checkpoints_dir))
     pipelines_dir = Path(to_absolute_path(cfg.paths.pipelines_dir))
