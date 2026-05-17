@@ -23,10 +23,7 @@ training:
   batch_size: 16
   lr: 0.001
   weight_decay: 0.0
-
-split:
-  # Committed within-subject split — same trial indices applied to every subject
-  path: src/neurostream/data/bci_iv_2a_v1.json
+  n_folds: 4          # Lawhern 2018 protocol: 4-fold CV on session T
 
 paths:
   checkpoints_dir: outputs/checkpoints

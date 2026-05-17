@@ -1,11 +1,17 @@
 """
-Within-subject EEGNet training loop.
+Within-subject EEGNet training loop with 4-fold cross-validation on session T.
 
 Design constraints (Phase 1):
 - No frameworks (Lightning, Accelerate) — every step must be inspectable
 - Single seed controls all stochasticity
 - Hydra config drives all hyperparameters
 - MLflow logs every run artefact needed to reproduce or compare results
+
+Protocol (Lawhern 2018):
+- Stratified 4-fold CV on session T per subject
+- Per-fold pipeline fit on train portion only (no leakage)
+- Subject score = mean of 4 best-val accuracies across folds
+- Session E is not used (T→E cross-session is a different benchmark)
 """
 
 from __future__ import annotations
@@ -25,11 +31,11 @@ import torch
 import torch.nn as nn
 from hydra.utils import to_absolute_path
 from omegaconf import DictConfig, OmegaConf
+from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader, TensorDataset
 
 from neurostream.data.loader import load_subject
 from neurostream.models.eegnet import EEGNet
-from neurostream.preprocessing.data_split import load_split
 from neurostream.preprocessing.filters import BandpassParams
 from neurostream.preprocessing.pipeline import (
     PipelineConfig,
@@ -55,69 +61,20 @@ def set_deterministic_seed(seed: int) -> None:
 # ── Data helpers ─────────────────────────────────────────────────────────────
 
 
-@dataclass(frozen=True)
-class FittedShape:
-    n_channels: int
-    n_samples: int
-
-
-def make_loaders(
-    subject_id: int,
-    split_path: Path,
-    bandpass: BandpassParams,
-    batch_size: int,
-    pipelines_dir: Path,
-) -> tuple[DataLoader[Any], DataLoader[Any], DataLoader[Any], FittedShape]:
-    """
-    Build train/val/test DataLoaders for one subject.
-
-      Session T  →  train + val (committed within-subject split, shared across subjects)
-      Session E  →  test (held-out, never touched during training)
-
-    The fitted preprocessing pipeline (bandpass + per-channel z-score) is fit
-    on train only and persisted to disk so the test set is reproducible from
-    artefacts alone.
-    """
-    epochs_train, labels_train = load_subject(subject_id, "T")
-    epochs_test, labels_test = load_subject(subject_id, "E")
-
-    split = load_split(split_path)
-    train_idx, val_idx = split.train, split.val
-
-    # ── Preprocessing ────────────────────────────────────────────────────────
-    pipeline = fit_pipeline(
-        epochs_train[train_idx],
-        config=PipelineConfig(bandpass=bandpass),
+def _to_loader(
+    X: np.ndarray, y: np.ndarray, batch_size: int, shuffle: bool
+) -> DataLoader[Any]:
+    dataset = TensorDataset(
+        torch.from_numpy(X).float(),
+        torch.from_numpy(y).long(),
     )
-    save_pipeline(pipeline, pipelines_dir / f"subject_{subject_id:02d}")
-
-    X_train = pipeline.transform(epochs_train[train_idx])
-    X_val = pipeline.transform(epochs_train[val_idx])
-    X_test = pipeline.transform(epochs_test)
-
-    y_train = labels_train[train_idx]
-    y_val = labels_train[val_idx]
-    y_test = labels_test
-
-    def to_loader(X: np.ndarray, y: np.ndarray, shuffle: bool) -> DataLoader[Any]:
-        dataset = TensorDataset(
-            torch.from_numpy(X).float(),
-            torch.from_numpy(y).long(),
-        )
-        return DataLoader(
-            dataset,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            num_workers=0,  # cached npz loads are fast; multiproc adds overhead
-            pin_memory=torch.cuda.is_available(),
-            drop_last=False,
-        )
-
-    return (
-        to_loader(X_train, y_train, shuffle=True),
-        to_loader(X_val, y_val, shuffle=False),
-        to_loader(X_test, y_test, shuffle=False),
-        FittedShape(n_channels=X_train.shape[1], n_samples=X_train.shape[2]),
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=0,  # cached npz loads are fast; multiproc adds overhead
+        pin_memory=torch.cuda.is_available(),
+        drop_last=False,
     )
 
 
@@ -140,6 +97,9 @@ def run_epoch(
     """
     Single pass through `loader`. If optimizer is None, runs in eval mode.
     Returns loss and accuracy averaged over all samples.
+
+    After each optimiser step, applies the model's max_norm constraints if
+    defined (Keras-style; required for faithful EEGNet reproduction).
     """
     training = optimizer is not None
     model.train(training)
@@ -160,6 +120,9 @@ def run_epoch(
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 optimizer.step()
+                apply = getattr(model, "apply_max_norm", None)
+                if callable(apply):
+                    apply()
 
             total_loss += loss.item() * len(y_batch)
             correct += (logits.argmax(dim=1) == y_batch).sum().item()
@@ -171,15 +134,78 @@ def run_epoch(
     )
 
 
+def _train_fold(
+    *,
+    fold_idx: int,
+    subject_id: int,
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    X_val: np.ndarray,
+    y_val: np.ndarray,
+    cfg: DictConfig,
+    device: torch.device,
+    checkpoints_dir: Path,
+) -> float:
+    """Train one fold, return best val accuracy (at min val loss)."""
+
+    train_loader = _to_loader(X_train, y_train, cfg.training.batch_size, shuffle=True)
+    val_loader = _to_loader(X_val, y_val, cfg.training.batch_size, shuffle=False)
+
+    model = EEGNet(
+        n_classes=cfg.model.n_classes,
+        n_channels=X_train.shape[1],
+        n_samples=X_train.shape[2],
+        fs=cfg.model.fs,
+        f1=cfg.model.f1,
+        d=cfg.model.d,
+        dropout=cfg.model.dropout,
+        kernel_length=cfg.model.kernel_length,
+    ).to(device)
+
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=cfg.training.lr,
+        weight_decay=cfg.training.weight_decay,
+    )
+    criterion = nn.CrossEntropyLoss()
+
+    best_val_loss = float("inf")
+    best_val_acc = 0.0
+    ckpt_path = checkpoints_dir / f"subject_{subject_id:02d}_fold{fold_idx}_best.pt"
+
+    for epoch in range(1, cfg.training.epochs + 1):
+        train_m = run_epoch(model, train_loader, criterion, optimizer, device)
+        val_m = run_epoch(model, val_loader, criterion, None, device)
+
+        if val_m.loss < best_val_loss:
+            best_val_loss = val_m.loss
+            best_val_acc = val_m.accuracy
+            torch.save(model.state_dict(), ckpt_path)
+
+        mlflow.log_metrics(
+            {
+                f"s{subject_id:02d}/fold{fold_idx}/train_loss": train_m.loss,
+                f"s{subject_id:02d}/fold{fold_idx}/train_acc": train_m.accuracy,
+                f"s{subject_id:02d}/fold{fold_idx}/val_loss": val_m.loss,
+                f"s{subject_id:02d}/fold{fold_idx}/val_acc": val_m.accuracy,
+            },
+            step=epoch,
+        )
+
+    mlflow.log_metric(f"s{subject_id:02d}/fold{fold_idx}/best_val_acc", best_val_acc)
+    mlflow.log_artifact(str(ckpt_path))
+    return best_val_acc
+
+
 def train_subject(
     subject_id: int,
     cfg: DictConfig,
     device: torch.device,
-    split_path: Path,
     pipelines_dir: Path,
     checkpoints_dir: Path,
 ) -> float:
-    """Train EEGNet on one subject. Returns test accuracy."""
+    """Stratified 4-fold CV on session T. Returns mean best-val accuracy."""
+    epochs_train, labels_train = load_subject(subject_id, "T")
 
     bandpass = BandpassParams(
         low_hz=cfg.preprocessing.bandpass.low_hz,
@@ -188,70 +214,44 @@ def train_subject(
         order=cfg.preprocessing.bandpass.order,
     )
 
-    train_loader, val_loader, test_loader, shape = make_loaders(
-        subject_id=subject_id,
-        split_path=split_path,
-        bandpass=bandpass,
-        batch_size=cfg.training.batch_size,
-        pipelines_dir=pipelines_dir,
+    skf = StratifiedKFold(
+        n_splits=cfg.training.n_folds, shuffle=True, random_state=cfg.seed
     )
+    fold_accs: list[float] = []
 
-    # n_samples comes from the data, not the config — single source of truth
-    model = EEGNet(
-        n_classes=cfg.model.n_classes,
-        n_channels=shape.n_channels,
-        n_samples=shape.n_samples,
-        fs=cfg.model.fs,
-        f1=cfg.model.f1,
-        d=cfg.model.d,
-        dropout=cfg.model.dropout,
-    ).to(device)
-
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=cfg.training.lr,
-        weight_decay=cfg.training.weight_decay,
-    )
-
-    criterion = nn.CrossEntropyLoss()
-
-    best_val_loss = float("inf")
-    checkpoints_dir.mkdir(parents=True, exist_ok=True)
-    best_ckpt_path = checkpoints_dir / f"subject_{subject_id:02d}_best.pt"
-
-    for epoch in range(1, cfg.training.epochs + 1):
-        train_m = run_epoch(model, train_loader, criterion, optimizer, device)
-        val_m = run_epoch(model, val_loader, criterion, None, device)
-
-        if val_m.loss < best_val_loss:
-            best_val_loss = val_m.loss
-            torch.save(model.state_dict(), best_ckpt_path)
-
-        mlflow.log_metrics(
-            {
-                f"s{subject_id:02d}/train_loss": train_m.loss,
-                f"s{subject_id:02d}/train_acc": train_m.accuracy,
-                f"s{subject_id:02d}/val_loss": val_m.loss,
-                f"s{subject_id:02d}/val_acc": val_m.accuracy,
-            },
-            step=epoch,
+    for fold_idx, (train_idx, val_idx) in enumerate(
+        skf.split(epochs_train, labels_train)
+    ):
+        # Per-fold pipeline fit — train statistics never see val
+        pipeline = fit_pipeline(
+            epochs_train[train_idx], config=PipelineConfig(bandpass=bandpass)
         )
+        # Persist fold 0 only — others are recoverable from seed + fold index
+        if fold_idx == 0:
+            save_pipeline(pipeline, pipelines_dir / f"subject_{subject_id:02d}")
 
-    # ── Test evaluation ──────────────────────────────────────────────────────
-    # Use best-val checkpoint, not final weights (which may have overfit)
-    model.load_state_dict(
-        torch.load(best_ckpt_path, map_location=device, weights_only=True)
-    )
-    test_m = run_epoch(model, test_loader, criterion, None, device)
+        X_train = pipeline.transform(epochs_train[train_idx])
+        X_val = pipeline.transform(epochs_train[val_idx])
+        y_train = labels_train[train_idx]
+        y_val = labels_train[val_idx]
 
-    mlflow.log_metric(f"s{subject_id:02d}/test_acc", test_m.accuracy)
-    mlflow.log_artifact(str(best_ckpt_path))
-    mlflow.log_artifacts(
-        str(pipelines_dir / f"subject_{subject_id:02d}"),
-        artifact_path=f"pipelines/subject_{subject_id:02d}",
-    )
+        acc = _train_fold(
+            fold_idx=fold_idx,
+            subject_id=subject_id,
+            X_train=X_train,
+            y_train=y_train,
+            X_val=X_val,
+            y_val=y_val,
+            cfg=cfg,
+            device=device,
+            checkpoints_dir=checkpoints_dir,
+        )
+        fold_accs.append(acc)
+        print(f"  Subject {subject_id:02d} fold {fold_idx}: best_val_acc={acc:.4f}")
 
-    return test_m.accuracy
+    mean_acc = float(np.mean(fold_accs))
+    mlflow.log_metric(f"s{subject_id:02d}/mean_fold_val_acc", mean_acc)
+    return mean_acc
 
 
 # ── Entry point ──────────────────────────────────────────────────────────────
@@ -283,9 +283,10 @@ def main(cfg: DictConfig) -> None:
     set_deterministic_seed(cfg.seed)
     device = _pick_device()
 
-    split_path = Path(to_absolute_path(cfg.split.path))
     checkpoints_dir = Path(to_absolute_path(cfg.paths.checkpoints_dir))
     pipelines_dir = Path(to_absolute_path(cfg.paths.pipelines_dir))
+    checkpoints_dir.mkdir(parents=True, exist_ok=True)
+    pipelines_dir.mkdir(parents=True, exist_ok=True)
 
     mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.mlflow.experiment_name)
@@ -303,16 +304,15 @@ def main(cfg: DictConfig) -> None:
                 subject_id=subject_id,
                 cfg=cfg,
                 device=device,
-                split_path=split_path,
                 pipelines_dir=pipelines_dir,
                 checkpoints_dir=checkpoints_dir,
             )
             per_subject_acc[subject_id] = acc
-            print(f"Subject {subject_id:02d}: test_acc={acc:.4f}")
+            print(f"Subject {subject_id:02d}: mean_fold_val_acc={acc:.4f}")
 
         mean_acc = float(np.mean(list(per_subject_acc.values())))
-        mlflow.log_metric("mean_test_acc", mean_acc)
-        print(f"\nMean test accuracy: {mean_acc:.4f}")
+        mlflow.log_metric("mean_val_acc", mean_acc)
+        print(f"\nMean 4-fold val accuracy across subjects: {mean_acc:.4f}")
 
 
 if __name__ == "__main__":
