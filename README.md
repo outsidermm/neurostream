@@ -2,9 +2,10 @@
 
 **Self-supervised EEG foundation model with a sub-10ms production inference platform.**
 
-[![CI](https://img.shields.io/github/actions/workflow/status/YOUR_HANDLE/neurostream/ci.yml?branch=main&label=CI)](https://github.com/YOUR_HANDLE/neurostream/actions)
-[![Benchmarks](https://img.shields.io/badge/p99_latency-7.2ms-brightgreen)](docs/benchmarks.md)
-[![Container](https://img.shields.io/badge/image-ghcr.io%2FYOUR__HANDLE%2Fneurostream-blue)](https://github.com/YOUR_HANDLE/neurostream/pkgs/container/neurostream)
+
+[![CI](https://img.shields.io/github/actions/workflow/status/outsidermm/neurostream/ci.yml?branch=main&label=CI)](https://github.com/outsidermm/neurostream/actions)
+[![Python](https://img.shields.io/badge/python-3.12-blue)](pyproject.toml)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 NeuroStream classifies motor-imagery EEG signals in real time — fast enough to drive brain–computer interface control loops. It pairs a masked-autoencoder foundation model pretrained on 25k clinical recordings with a zero-allocation C++ inference engine, wrapped in a reproducible MLOps platform (DVC, MLflow, Kubernetes, Prometheus).
