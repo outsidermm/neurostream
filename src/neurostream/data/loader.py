@@ -4,6 +4,7 @@ from typing import Literal
 
 import mne
 import numpy as np
+import scipy.io
 
 # src/neurostream/data/loader.py → parents[3] is the repo root
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
@@ -15,14 +16,21 @@ DATA_CACHE = Path(
 
 _DATASET = "bci_iv_2a"
 
-CACHE_VERSION = "v1"  # bump when loader logic changes
+CACHE_VERSION = "v3"  # bump when loader logic changes
+# v2: dropped EOG channels
+# v3: resampled to 128 Hz + window narrowed to [0.5, 2.5] s (match Lawhern 2018)
 
-CUE_EVENT_IDS = {"769": 0, "770": 1, "771": 2, "772": 3}  # left, right, feet, tongue
-SFREQ = 250
-# Window relative to cue onset. BCI IV 2a recordings end exactly 5.908 s after
-# the last cue across every training session, so a 6.0 s tmax drops the final
-# trial as TOO_SHORT. 5.9 s sits inside that margin and keeps all 288 trials.
-TMIN, TMAX = 0, 3.9
+EOG_CHANNELS = ("EOG-left", "EOG-central", "EOG-right")
+
+# Session T: cue annotation codes encode the class directly.
+CUE_TRAIN_IDS = {"769": 0, "770": 1, "771": 2, "772": 3}  # left, right, feet, tongue
+# Session E: every trial is annotated with the same "unknown cue" code.
+# The true classes live in a sibling A0XE.mat file (classlabel: int 1..4).
+CUE_TEST_ID = "783"
+
+# Match Lawhern et al. 2018: resample 250 → 128 Hz, epoch [0.5, 2.5] s post-cue.
+TARGET_SFREQ = 128
+TMIN, TMAX = 0.5, 2.5
 
 
 def _cache_path(subject_id: int, session: str) -> Path:
@@ -66,9 +74,18 @@ def _load_from_gdf(
     path = DATA_RAW / _DATASET / f"A0{subject_id}{session}.gdf"
     raw = mne.io.read_raw_gdf(path, preload=True, verbose="ERROR")
 
+    # GDF marks every channel as "eeg" — relabel EOG so picks="eeg" drops them
+    raw.set_channel_types({name: "eog" for name in EOG_CHANNELS})
+
+    # Resample BEFORE event extraction so event sample indices line up with the
+    # new sfreq. Annotations stay attached; MNE shifts them automatically.
+    raw.resample(TARGET_SFREQ, verbose="ERROR")
+
     events, event_id_map = mne.events_from_annotations(raw, verbose="ERROR")
-    # Keep only cue events that are in our four classes
-    cue_codes = {k: v for k, v in event_id_map.items() if k in CUE_EVENT_IDS}
+    if session == "T":
+        cue_codes = {k: v for k, v in event_id_map.items() if k in CUE_TRAIN_IDS}
+    else:
+        cue_codes = {k: v for k, v in event_id_map.items() if k == CUE_TEST_ID}
 
     # tmax is shaved by one sample so the window is exactly (TMAX - TMIN) * SFREQ
     # samples — without this MNE includes the t=TMAX endpoint, giving one extra.
@@ -77,7 +94,7 @@ def _load_from_gdf(
         events,
         event_id=cue_codes,
         tmin=TMIN,
-        tmax=TMAX - 1.0 / SFREQ,
+        tmax=TMAX - 1.0 / TARGET_SFREQ,
         picks="eeg",
         baseline=None,
         preload=True,
@@ -85,9 +102,20 @@ def _load_from_gdf(
     )
     assert len(epochs) == 288, f"Expected 288 trials, got {len(epochs)}"
 
-    # Remap MNE's internal event ids back to our 0..3 class labels
-    inverse = {v: CUE_EVENT_IDS[k] for k, v in cue_codes.items()}
-    labels = np.array([inverse[e] for e in epochs.events[:, 2]], dtype=np.int64)
+    if session == "T":
+        # Cue code IS the class — invert MNE's internal id remap back to 0..3
+        inverse = {v: CUE_TRAIN_IDS[k] for k, v in cue_codes.items()}
+        labels = np.array([inverse[e] for e in epochs.events[:, 2]], dtype=np.int64)
+    else:
+        # Session E labels distributed as a separate .mat (key "classlabel", 1..4)
+        label_path = DATA_RAW / _DATASET / f"A0{subject_id}E.mat"
+        classlabel = scipy.io.loadmat(label_path)["classlabel"].squeeze()
+        labels = classlabel.astype(np.int64) - 1  # shift to 0..3
+        if labels.shape != (len(epochs),):
+            raise ValueError(
+                f"Label count mismatch for A0{subject_id}E: "
+                f"got {labels.shape[0]} labels, {len(epochs)} epochs"
+            )
 
     data = epochs.get_data().astype(np.float32)  # (288, 22, n_samples)
     return data, labels
