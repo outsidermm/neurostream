@@ -148,10 +148,12 @@ Full evaluation report, per-subject breakdowns, and ablations: [`docs/results.md
 
 | Method | BCI IV 2a accuracy | Labeled data used |
 |---|---|---|
-| EEGNet (baseline, this repo) | 65.3% | 100% |
-| Published EEGNet (Lawhern et al. 2018) | 68.1% | 100% |
+| EEGNet (baseline, this repo) | 69.2% | 100% |
+| Published EEGNet (Lawhern et al. 2018) | 71.1% | 100% |
 | NeuroStream MAE + linear probe | **72.0%** | 1% |
 | Supervised SOTA (FBCSP-CNN, 2023) | 77.4% | 100% |
+
+*Baseline number is mean of stratified 4-fold CV on session T across 9 subjects (run `b199cad`, EEGNet-8,2 at 128 Hz with `max_norm` constraints). Full per-subject breakdown and the debugging path to that number is in [`docs/phase-1-notes/`](docs/phase-1-notes/); architectural rationale in [`docs/adr/0001-use-eegnet-as-baseline.md`](docs/adr/0001-use-eegnet-as-baseline.md).*
 
 ---
 
