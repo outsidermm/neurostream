@@ -12,10 +12,10 @@ import pytest
 import torch
 import torch.nn as nn
 
-from neurostream.data.loader import load_subject
+from neurostream.data.bci_iv_loader import load_subject
 from neurostream.models.eegnet import EEGNet
 from neurostream.preprocessing.filters import BandpassParams
-from neurostream.preprocessing.pipeline import PipelineConfig, fit_pipeline
+from neurostream.preprocessing.bci_pipeline import PipelineConfig, fit_pipeline
 from neurostream.training.train import set_deterministic_seed
 
 

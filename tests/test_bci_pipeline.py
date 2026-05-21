@@ -1,14 +1,14 @@
-# tests/test_pipeline.py
+# tests/test_bci_pipeline.py
 
 import numpy as np
 
-from neurostream.preprocessing.filters import BandpassParams
-from neurostream.preprocessing.pipeline import (
+from neurostream.preprocessing.bci_pipeline import (
     PipelineConfig,
     fit_pipeline,
     load_pipeline,
     save_pipeline,
 )
+from neurostream.preprocessing.filters import BandpassParams
 
 
 def test_fit_pipeline_is_deterministic():

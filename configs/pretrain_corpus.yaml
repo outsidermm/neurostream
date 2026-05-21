@@ -1,0 +1,43 @@
+# Mirrors `configs/train.yaml` structure. Consumed by
+# `scripts/ingest_open_corpus.py`. Output goes to `paths.output`.
+
+seed: 42
+
+paths:
+  # MOABB caches raw source data here on first download.
+  raw_cache: ${oc.env:HOME}/mne_data
+  # Harmonised per-recording .npy files + manifest.json land here.
+  output: data/processed/open_corpus
+
+harmonise:
+  target_fs: 128
+  bandpass: [0.5, 45.0]
+  filter_order: 4
+  reject_nan_frac: 0.10
+  reject_amp_uv: 500.0
+  reject_amp_frac: 0.05
+  min_duration_s: 60.0
+  # target_channels defaults to BCI_IV_2A_22_CHANNELS — override here if needed.
+  # Re-referencing is always common-average (see preprocessing/referencing.py).
+
+# Each dataset entry: name (matches DATASET_REGISTRY key) + subjects (null = all).
+datasets:
+  - name: PhysionetMI
+    subjects: null
+  - name: Cho2017
+    subjects: null
+  - name: Lee2019_MI
+    subjects: null
+  - name: Stieger2021
+    subjects: null
+  - name: Schirrmeister2017
+    subjects: null
+
+logging:
+  level: INFO
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/ingest/${now:%Y-%m-%d}/${now:%H-%M-%S}
