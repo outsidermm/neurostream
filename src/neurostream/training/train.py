@@ -14,10 +14,7 @@ Protocol (Lawhern 2018):
 - Session E is not used (T→E cross-session is a different benchmark)
 """
 
-from __future__ import annotations
-
 import random
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -41,6 +38,7 @@ from neurostream.preprocessing.pipeline import (
     fit_pipeline,
     save_pipeline,
 )
+from neurostream.utils.git import git_sha
 
 
 # ── Reproducibility ──────────────────────────────────────────────────────────
@@ -256,13 +254,6 @@ def train_subject(
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 
-def _get_git_sha() -> str:
-    try:
-        return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-    except Exception:
-        return "unknown"
-
-
 def _flatten_for_mlflow(d: dict[Any, Any]) -> dict[str, Any]:
     """MLflow rejects nested dicts — flatten to dotted string keys."""
     return {str(k): v for k, v in flatdict.FlatDict(d, delimiter=".").items()}
@@ -285,7 +276,7 @@ def main(cfg: DictConfig) -> None:
         cfg_dict = OmegaConf.to_container(cfg, resolve=True)
         assert isinstance(cfg_dict, dict)
         mlflow.log_params(_flatten_for_mlflow(cfg_dict))
-        mlflow.set_tag("git_sha", _get_git_sha())
+        mlflow.set_tag("git_sha", git_sha())
         mlflow.set_tag("device", str(device))
 
         per_subject_acc: dict[int, float] = {}
