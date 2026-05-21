@@ -30,10 +30,10 @@ from omegaconf import DictConfig, OmegaConf
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import DataLoader, TensorDataset
 
-from neurostream.data.loader import load_subject
+from neurostream.data.bci_iv_loader import load_subject
 from neurostream.models.eegnet import EEGNet
 from neurostream.preprocessing.filters import BandpassParams
-from neurostream.preprocessing.pipeline import (
+from neurostream.preprocessing.bci_pipeline import (
     PipelineConfig,
     fit_pipeline,
     save_pipeline,
