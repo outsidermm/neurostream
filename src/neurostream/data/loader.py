@@ -6,6 +6,8 @@ import mne
 import numpy as np
 import scipy.io
 
+from neurostream.data.channels import BCI_IV_2A_22_CHANNELS
+
 # src/neurostream/data/loader.py → parents[3] is the repo root
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
@@ -118,4 +120,7 @@ def _load_from_gdf(
             )
 
     data = epochs.get_data().astype(np.float32)  # (288, 22, n_samples)
+    assert data.shape[1] == len(BCI_IV_2A_22_CHANNELS), (
+        f"Expected {len(BCI_IV_2A_22_CHANNELS)} EEG channels, got {data.shape[1]}"
+    )
     return data, labels
