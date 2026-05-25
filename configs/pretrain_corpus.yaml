@@ -6,8 +6,13 @@ seed: 42
 paths:
   # MOABB caches raw source data here on first download.
   raw_cache: ${oc.env:HOME}/mne_data
-  # Harmonised per-recording .npy files + manifest.json land here.
+  # Harmonised sharded corpus (shard_NNN.npy + metadata) lands here.
   output: data/processed/open_corpus
+
+# Shard size in GB — recordings concatenated until buffer exceeds this.
+# 2GB balances between: (1) few enough shards for fast random access,
+# (2) small enough that one shard fits comfortably in RAM.
+shard_size_gb: 2.0
 
 harmonise:
   target_fs: 128

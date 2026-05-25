@@ -3,7 +3,11 @@
 Ingests each configured MOABB dataset, runs every recording through the
 preprocessing chain — channel selection -> resample -> bandpass -> common
 average reference -> rejection — and writes the survivors to disk as
-per-recording ``.npy`` files plus a ``manifest.json``.
+memory-mapped shards (~2GB each) plus metadata for each shard.
+
+**Sharding during ingest** (vs. sharding after) halves peak storage by avoiding
+an intermediate per-recording file stage. Critical for storage-constrained
+environments.
 """
 
 import json
@@ -21,7 +25,6 @@ from neurostream.data.channels import BCI_IV_2A_22_CHANNELS
 from neurostream.data.corpus_loader import iter_dataset
 from neurostream.utils.git import git_sha
 from neurostream.utils.io import atomic_save_npy, atomic_write_text
-from neurostream.utils.naming import safe_filename
 
 from .channel_selection import select_channels
 from .filters import BandpassParams, bandpass_filter
@@ -125,18 +128,84 @@ def harmonise(
 
 
 def ingest_corpus(cfg: DictConfig, out_dir: Path) -> dict:
-    """Harmonise every configured dataset to disk; return the manifest.
+    """Harmonise every configured dataset and shard directly to disk.
+
+    Shards recordings into ~2GB memory-mapped ``.npy`` files during ingestion,
+    avoiding an intermediate per-recording stage. Halves peak storage vs. the
+    ingest-then-shard approach.
 
     Layout written under ``out_dir``:
-        {source}/sub-{subject:03d}/ses-{session}_run-{run}.npy
-        manifest.json
+        shard_000.npy           # (n_channels, total_samples) concatenated
+        shard_000_meta.json     # recording boundaries + provenance
+        shard_001.npy
+        shard_001_meta.json
+        ...
+        manifest.json           # top-level: all shards + rejected recordings
     """
     out_dir.mkdir(parents=True, exist_ok=True)
     harmonise_cfg = harmonise_config_from_omegaconf(cfg.harmonise)
+    shard_size_gb = cfg.get("shard_size_gb", 2.0)
 
-    recordings: list[dict] = []
+    # Shard buffering state
+    shard_buffer: list[tuple[np.ndarray, dict]] = []  # (data, metadata) pairs
+    shard_buffer_bytes = 0
+    shard_idx = 0
+    all_shards: list[dict] = []
     rejected: list[dict] = []
 
+    def flush_shard():
+        """Write current shard buffer to disk and reset."""
+        nonlocal shard_buffer, shard_buffer_bytes, shard_idx
+        if not shard_buffer:
+            return
+
+        # Concatenate all recordings in buffer
+        arrays = [data for data, _ in shard_buffer]
+        concatenated = np.concatenate(arrays, axis=1)
+
+        # Write shard
+        shard_name = f"shard_{shard_idx:03d}.npy"
+        atomic_save_npy(out_dir / shard_name, concatenated)
+
+        # Build metadata: byte ranges for each recording
+        recordings_in_shard = []
+        offset = 0
+        for data, meta in shard_buffer:
+            n_samples = data.shape[1]
+            recordings_in_shard.append(
+                {
+                    **meta,
+                    "byte_offset": offset,
+                    "n_samples": n_samples,
+                }
+            )
+            offset += n_samples
+
+        shard_meta = {
+            "shard_name": shard_name,
+            "shard_idx": shard_idx,
+            "n_channels": int(concatenated.shape[0]),
+            "total_samples": int(concatenated.shape[1]),
+            "recordings": recordings_in_shard,
+        }
+        atomic_write_text(
+            out_dir / f"shard_{shard_idx:03d}_meta.json",
+            json.dumps(shard_meta, indent=2, default=str),
+        )
+        all_shards.append(shard_meta)
+
+        log.info(
+            f"Flushed shard_{shard_idx:03d}: "
+            f"{len(recordings_in_shard)} recordings, "
+            f"{concatenated.shape[1]} samples, "
+            f"{concatenated.nbytes / 1e9:.2f} GB"
+        )
+
+        shard_buffer = []
+        shard_buffer_bytes = 0
+        shard_idx += 1
+
+    # Ingest all datasets
     for ds_cfg in cfg.datasets:
         name = ds_cfg.name
         subjects = list(ds_cfg.subjects) if ds_cfg.get("subjects") is not None else None
@@ -161,40 +230,46 @@ def ingest_corpus(cfg: DictConfig, out_dir: Path) -> dict:
                     rejected.append({**base, "reason": reason.value})
                     continue
 
-                rel_path = (
-                    Path(handle.source)
-                    / f"sub-{handle.subject:03d}"
-                    / f"ses-{safe_filename(handle.session)}"
-                    f"_run-{safe_filename(handle.run)}.npy"
-                )
-                atomic_save_npy(out_dir / rel_path, data)
-                recordings.append(
-                    {
-                        **base,
-                        "path": str(rel_path),
-                        "n_channels": int(data.shape[0]),
-                        "n_samples": int(data.shape[1]),
-                        "fs": harmonise_cfg.target_fs,
-                        "units": "uV",
-                    }
-                )
+                # Add to shard buffer
+                metadata = {
+                    **base,
+                    "n_channels": int(data.shape[0]),
+                    "fs": harmonise_cfg.target_fs,
+                    "units": "uV",
+                }
+                shard_buffer.append((data, metadata))
+                shard_buffer_bytes += data.nbytes
+
+                # Flush if buffer exceeds target shard size
+                if shard_buffer_bytes > shard_size_gb * 1e9:
+                    flush_shard()
+
         except Exception:
             log.exception(f"{name}: source-level failure, continuing with next")
             continue
 
+    # Flush final partial shard
+    flush_shard()
+
+    # Write top-level manifest
     manifest = {
-        "version": "v1",
+        "version": "v2-sharded",
         "harmonise_config": asdict(harmonise_cfg),
+        "shard_size_gb": shard_size_gb,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "git_sha": git_sha(),
-        "recordings": recordings,
+        "shards": all_shards,
         "rejected": rejected,
+        "total_recordings": sum(len(s["recordings"]) for s in all_shards),
+        "total_shards": len(all_shards),
     }
     atomic_write_text(
         out_dir / "manifest.json", json.dumps(manifest, indent=2, default=str)
     )
     log.info(
-        f"Done. kept={len(recordings)} rejected={len(rejected)} "
-        f"sources_seen={sorted({r['source'] for r in recordings})}"
+        f"Done. kept={manifest['total_recordings']} "
+        f"rejected={len(rejected)} "
+        f"shards={manifest['total_shards']} "
+        f"sources_seen={sorted(set(r['source'] for s in all_shards for r in s['recordings']))}"
     )
     return manifest

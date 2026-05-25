@@ -173,21 +173,29 @@ def test_ingest_corpus_writes_manifest_and_npy(tmp_path, make_raw, monkeypatch):
     )
     manifest = corpus_pipeline.ingest_corpus(cfg, tmp_path)
 
-    assert manifest["version"] == "v1"
-    assert len(manifest["recordings"]) == 1
+    assert manifest["version"] == "v2-sharded"
+    assert manifest["total_recordings"] == 1
+    assert manifest["total_shards"] == 1
     assert len(manifest["rejected"]) == 0
 
-    rec = manifest["recordings"][0]
+    shard = manifest["shards"][0]
+    assert shard["n_channels"] == 22
+    assert shard["total_samples"] == 70 * 128
+    assert len(shard["recordings"]) == 1
+
+    rec = shard["recordings"][0]
     assert rec["n_channels"] == 22
     assert rec["fs"] == 128
     assert rec["units"] == "uV"
+    assert rec["n_samples"] == 70 * 128
+    assert rec["byte_offset"] == 0
 
-    arr = np.load(tmp_path / rec["path"])
+    arr = np.load(tmp_path / shard["shard_name"])
     assert arr.shape == (22, 70 * 128)
     assert arr.dtype == np.float32
 
     on_disk = json.loads((tmp_path / "manifest.json").read_text())
-    assert on_disk["recordings"] == manifest["recordings"]
+    assert on_disk["shards"] == manifest["shards"]
 
 
 def test_ingest_corpus_records_rejections(tmp_path, make_raw, monkeypatch):
@@ -210,7 +218,8 @@ def test_ingest_corpus_records_rejections(tmp_path, make_raw, monkeypatch):
     )
     manifest = corpus_pipeline.ingest_corpus(cfg, tmp_path)
 
-    assert len(manifest["recordings"]) == 0
+    assert manifest["total_recordings"] == 0
+    assert manifest["total_shards"] == 0
     assert len(manifest["rejected"]) == 1
     assert manifest["rejected"][0]["reason"] == RejectionReason.TOO_SHORT.value
 
@@ -231,11 +240,12 @@ def test_physionetmi_subject1_end_to_end(tmp_path):
     )
     manifest = corpus_pipeline.ingest_corpus(cfg, tmp_path)
 
-    assert len(manifest["recordings"]) > 0, (
+    assert manifest["total_recordings"] > 0, (
         f"no recordings survived. rejected={manifest['rejected']}"
     )
-    for rec in manifest["recordings"]:
-        arr = np.load(tmp_path / rec["path"])
+    for shard in manifest["shards"]:
+        arr = np.load(tmp_path / shard["shard_name"])
         assert arr.shape[0] == 22
         assert arr.dtype == np.float32
-        assert rec["fs"] == 128
+        for rec in shard["recordings"]:
+            assert rec["fs"] == 128
