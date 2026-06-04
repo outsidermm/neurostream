@@ -2,7 +2,6 @@
 
 import mne
 import numpy as np
-import pytest
 
 from neurostream.data.channels import BCI_IV_2A_22_CHANNELS
 from neurostream.preprocessing.missing_channels import ensure_channels

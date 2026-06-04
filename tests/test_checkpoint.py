@@ -1,6 +1,4 @@
 import json
-import pytest
-from pathlib import Path
 
 from neurostream.utils.checkpoint import CheckpointManager
 
