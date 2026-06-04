@@ -7,6 +7,7 @@ orchestrates them: harmonise() and ingest_corpus().
 
 import json
 
+import mne
 import numpy as np
 import pytest
 from omegaconf import OmegaConf
@@ -143,7 +144,6 @@ def test_dataset_registry_contains_expected_sources():
         "PhysionetMI",
         "Cho2017",
         "Lee2019_MI",
-        "Stieger2021",
         "Schirrmeister2017",
     }
 
@@ -222,6 +222,123 @@ def test_ingest_corpus_records_rejections(tmp_path, make_raw, monkeypatch):
     assert manifest["total_shards"] == 0
     assert len(manifest["rejected"]) == 1
     assert manifest["rejected"][0]["reason"] == RejectionReason.TOO_SHORT.value
+
+
+# ---------------------------------------------------------------------------
+# Cho2017 scale-factor fix
+# ---------------------------------------------------------------------------
+
+
+def test_harmonise_cho2017_applies_correct_scale():
+    """Cho2017 MOABB delivers data in mV (not V) due to MOABB's nV→V unit bug.
+    harmonise() must use *1e3 so physiological amplitudes survive rejection."""
+    # Simulate what MOABB delivers: real signal ~70 µV, but MOABB's *1e-6 on
+    # nV data leaves MNE holding values ~70 mV (= 70e-3 V).
+    rng = np.random.default_rng(42)
+    n_samples = 70 * 500
+    data = rng.standard_normal((22, n_samples)) * 70e-3  # 70 mV std
+    info = mne.create_info(ch_names=list(BCI_IV_2A_22_CHANNELS), sfreq=500.0, ch_types="eeg")
+    raw = mne.io.RawArray(data, info, verbose="ERROR")
+
+    out, reason = harmonise(raw, HarmoniseConfig(), source="Cho2017")
+    assert reason is None, f"Cho2017 recording rejected as {reason}; expected to pass"
+    assert out is not None
+
+
+def test_harmonise_default_scale_rejects_millivolt_amplitude():
+    """Without source-specific correction, mV-level raw data should exceed the
+    500 µV amplitude threshold (confirming the fix is actually exercised)."""
+    rng = np.random.default_rng(42)
+    n_samples = 70 * 500
+    data = rng.standard_normal((22, n_samples)) * 70e-3
+    info = mne.create_info(ch_names=list(BCI_IV_2A_22_CHANNELS), sfreq=500.0, ch_types="eeg")
+    raw = mne.io.RawArray(data, info, verbose="ERROR")
+
+    _, reason = harmonise(raw, HarmoniseConfig(), source="PhysionetMI")
+    assert reason == RejectionReason.AMPLITUDE_HEAVY
+
+
+# ---------------------------------------------------------------------------
+# Lee2019_MI FCz interpolation fix
+# ---------------------------------------------------------------------------
+
+
+def test_harmonise_lee2019_mi_passes_despite_missing_fcz():
+    """Lee2019_MI lacks FCz; harmonise() must interpolate it and not reject."""
+    channels_without_fcz = [ch for ch in BCI_IV_2A_22_CHANNELS if ch != "FCz"]
+    rng = np.random.default_rng(0)
+    n_samples = 70 * 500
+    data = rng.standard_normal((len(channels_without_fcz), n_samples)) * 10e-6
+    info = mne.create_info(ch_names=list(channels_without_fcz), sfreq=500.0, ch_types="eeg")
+    raw = mne.io.RawArray(data, info, verbose="ERROR")
+
+    out, reason = harmonise(raw, HarmoniseConfig(), source="Lee2019_MI")
+    assert reason != RejectionReason.MISSING_CHANNELS, (
+        "harmonise() rejected Lee2019_MI for MISSING_CHANNELS; FCz interpolation not applied"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Silent-failure fix — subject not checkpointed when iter_dataset yields nothing
+# ---------------------------------------------------------------------------
+
+
+def test_ingest_corpus_does_not_checkpoint_subject_when_iter_yields_nothing(
+    tmp_path, monkeypatch
+):
+    """When iter_dataset silently yields nothing (e.g. a caught fetch error),
+    the subject must NOT be written to the checkpoint so the next run retries."""
+
+    def fake_iter(name, subjects):  # noqa: ARG001
+        return iter([])  # silent empty — simulates a caught OSError
+
+    monkeypatch.setattr(corpus_pipeline, "iter_dataset", fake_iter)
+
+    cfg = OmegaConf.create(
+        {
+            "harmonise": _HARMONISE_CFG,
+            "datasets": [{"name": "PhysionetMI", "subjects": [1]}],
+        }
+    )
+    corpus_pipeline.ingest_corpus(cfg, tmp_path)
+
+    checkpoint_path = tmp_path / "checkpoint.json"
+    if checkpoint_path.exists():
+        data = json.loads(checkpoint_path.read_text())
+        assert ["PhysionetMI", 1] not in data.get("completed", []), (
+            "Subject checkpointed despite iter_dataset yielding nothing"
+        )
+
+
+def test_ingest_corpus_checkpoints_subject_when_all_recordings_rejected(
+    tmp_path, make_raw, monkeypatch
+):
+    """A subject whose recordings all fail rejection checks (subj_rejected non-empty)
+    should still be checkpointed so the pipeline doesn't retry it needlessly."""
+
+    def fake_iter(name, subjects):  # noqa: ARG001
+        yield RecordingHandle(
+            source=name,
+            subject=1,
+            session="0",
+            run="0",
+            raw=make_raw(fs=500, n_seconds=30),  # too short — will be rejected
+        )
+
+    monkeypatch.setattr(corpus_pipeline, "iter_dataset", fake_iter)
+
+    cfg = OmegaConf.create(
+        {
+            "harmonise": _HARMONISE_CFG,
+            "datasets": [{"name": "PhysionetMI", "subjects": [1]}],
+        }
+    )
+    corpus_pipeline.ingest_corpus(cfg, tmp_path)
+
+    checkpoint_path = tmp_path / "checkpoint.json"
+    assert checkpoint_path.exists()
+    data = json.loads(checkpoint_path.read_text())
+    assert ["PhysionetMI", 1] in data["completed"]
 
 
 # ---------------------------------------------------------------------------

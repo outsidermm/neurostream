@@ -14,7 +14,6 @@ from moabb.datasets import (
     Lee2019_MI,
     PhysionetMI,
     Schirrmeister2017,
-    Stieger2021,
 )
 
 log = logging.getLogger(__name__)
@@ -25,7 +24,6 @@ DATASET_REGISTRY: dict[str, type] = {
     "PhysionetMI": PhysionetMI,
     "Cho2017": Cho2017,
     "Lee2019_MI": Lee2019_MI,
-    "Stieger2021": Stieger2021,
     "Schirrmeister2017": Schirrmeister2017,
 }
 
@@ -39,6 +37,13 @@ class RecordingHandle:
     session: str
     run: str
     raw: mne.io.BaseRaw
+
+
+def get_subjects(name: str) -> list[int]:
+    """Return the full subject list for a registered MOABB dataset."""
+    if name not in DATASET_REGISTRY:
+        raise KeyError(f"Unknown dataset {name!r}; known: {list(DATASET_REGISTRY)}")
+    return list(DATASET_REGISTRY[name]().subject_list)
 
 
 def iter_dataset(
