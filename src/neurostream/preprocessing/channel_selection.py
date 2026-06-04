@@ -19,7 +19,6 @@ PER_SOURCE_RENAMES: dict[str, dict[str, str]] = {
     "PhysionetMI": {},
     "Cho2017": {},
     "Lee2019_MI": {},
-    "Stieger2021": {},
     "Schirrmeister2017": {},
 }
 
