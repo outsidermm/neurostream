@@ -1,6 +1,7 @@
-# src/neurostream/preprocessing/pipeline.py
-from dataclasses import dataclass
+"""BCI IV 2a preprocessing pipeline — bandpass filter then normalisation."""
+
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
