@@ -30,11 +30,26 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 )
 def main(cfg: DictConfig) -> None:
     # Point MNE/MOABB at the project-local raw cache before any dataset access.
-    # Both the env var and the persisted MNE config must agree — MOABB falls
-    # back to the config file for fresh downloads and ignores the env var alone.
-    raw_cache = (_PROJECT_ROOT / cfg.paths.raw_cache).resolve()
-    os.environ["MNE_DATA"] = str(raw_cache)
-    mne.set_config("MNE_DATA", str(raw_cache))
+    # IMPORTANT: store as a relative path (not an absolute Windows path).
+    # MOABB's _sanitize_path() replaces ':' with '-' across the full path string,
+    # turning 'C:\...' into 'C-\...' and making absolute paths relative, which
+    # causes downloads to land in a spurious C-/ directory under CWD.
+    # A relative path (no ':') is immune to this bug.
+    # The script always runs from the project root (hydra.job.chdir=false), so
+    # the relative path resolves correctly.
+    raw_cache_rel = cfg.paths.raw_cache  # e.g. "data/raw"
+    raw_cache = (_PROJECT_ROOT / raw_cache_rel).resolve()
+    os.environ["MNE_DATA"] = raw_cache_rel
+    mne.set_config("MNE_DATA", raw_cache_rel)
+    # Clear any stale per-dataset absolute-path keys written by previous runs.
+    # These would override MNE_DATA and still contain 'C:\...' paths that trigger
+    # the MOABB _sanitize_path colon-stripping bug.
+    for _key in (
+        "MNE_DATASETS_EEGBCI_PATH",
+        "MNE_DATASETS_LEE2019-MI_PATH",
+        "MNE_DATASETS_SCHIRRMEISTER2017_PATH",
+    ):
+        mne.set_config(_key, None)
 
     logging.basicConfig(
         level=getattr(logging, cfg.logging.level),
