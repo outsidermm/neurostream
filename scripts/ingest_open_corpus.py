@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 
 import hydra
+import mne
 from omegaconf import DictConfig
 
 from neurostream.preprocessing.corpus_pipeline import ingest_corpus
@@ -29,8 +30,11 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 )
 def main(cfg: DictConfig) -> None:
     # Point MNE/MOABB at the project-local raw cache before any dataset access.
+    # Both the env var and the persisted MNE config must agree — MOABB falls
+    # back to the config file for fresh downloads and ignores the env var alone.
     raw_cache = (_PROJECT_ROOT / cfg.paths.raw_cache).resolve()
     os.environ["MNE_DATA"] = str(raw_cache)
+    mne.set_config("MNE_DATA", str(raw_cache))
 
     logging.basicConfig(
         level=getattr(logging, cfg.logging.level),
