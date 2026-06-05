@@ -10,7 +10,6 @@ from dataclasses import dataclass
 
 import mne
 from moabb.datasets import (
-    Cho2017,
     Lee2019_MI,
     PhysionetMI,
     Schirrmeister2017,
@@ -22,7 +21,6 @@ log = logging.getLogger(__name__)
 # name -> MOABB dataset class.
 DATASET_REGISTRY: dict[str, type] = {
     "PhysionetMI": PhysionetMI,
-    "Cho2017": Cho2017,
     "Lee2019_MI": Lee2019_MI,
     "Schirrmeister2017": Schirrmeister2017,
 }

@@ -17,7 +17,6 @@ log = logging.getLogger(__name__)
 # naming convention needs fixing up (visible as MISSING_CHANNELS rejections).
 PER_SOURCE_RENAMES: dict[str, dict[str, str]] = {
     "PhysionetMI": {},
-    "Cho2017": {},
     "Lee2019_MI": {},
     "Schirrmeister2017": {},
 }
