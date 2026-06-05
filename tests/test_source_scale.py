@@ -9,7 +9,3 @@ def test_default_scale_is_1e6():
     assert v_to_uv_scale("Schirrmeister2017") == 1e6
     assert v_to_uv_scale("") == 1e6
     assert v_to_uv_scale("unknown_dataset") == 1e6
-
-
-def test_cho2017_scale_is_1e3():
-    assert v_to_uv_scale("Cho2017") == 1e3

@@ -142,7 +142,6 @@ def test_harmonise_config_from_omegaconf_round_trips():
 def test_dataset_registry_contains_expected_sources():
     assert set(DATASET_REGISTRY) == {
         "PhysionetMI",
-        "Cho2017",
         "Lee2019_MI",
         "Schirrmeister2017",
     }
@@ -222,40 +221,6 @@ def test_ingest_corpus_records_rejections(tmp_path, make_raw, monkeypatch):
     assert manifest["total_shards"] == 0
     assert len(manifest["rejected"]) == 1
     assert manifest["rejected"][0]["reason"] == RejectionReason.TOO_SHORT.value
-
-
-# ---------------------------------------------------------------------------
-# Cho2017 scale-factor fix
-# ---------------------------------------------------------------------------
-
-
-def test_harmonise_cho2017_applies_correct_scale():
-    """Cho2017 MOABB delivers data in mV (not V) due to MOABB's nV→V unit bug.
-    harmonise() must use *1e3 so physiological amplitudes survive rejection."""
-    # Simulate what MOABB delivers: real signal ~70 µV, but MOABB's *1e-6 on
-    # nV data leaves MNE holding values ~70 mV (= 70e-3 V).
-    rng = np.random.default_rng(42)
-    n_samples = 70 * 500
-    data = rng.standard_normal((22, n_samples)) * 70e-3  # 70 mV std
-    info = mne.create_info(ch_names=list(BCI_IV_2A_22_CHANNELS), sfreq=500.0, ch_types="eeg")
-    raw = mne.io.RawArray(data, info, verbose="ERROR")
-
-    out, reason = harmonise(raw, HarmoniseConfig(), source="Cho2017")
-    assert reason is None, f"Cho2017 recording rejected as {reason}; expected to pass"
-    assert out is not None
-
-
-def test_harmonise_default_scale_rejects_millivolt_amplitude():
-    """Without source-specific correction, mV-level raw data should exceed the
-    500 µV amplitude threshold (confirming the fix is actually exercised)."""
-    rng = np.random.default_rng(42)
-    n_samples = 70 * 500
-    data = rng.standard_normal((22, n_samples)) * 70e-3
-    info = mne.create_info(ch_names=list(BCI_IV_2A_22_CHANNELS), sfreq=500.0, ch_types="eeg")
-    raw = mne.io.RawArray(data, info, verbose="ERROR")
-
-    _, reason = harmonise(raw, HarmoniseConfig(), source="PhysionetMI")
-    assert reason == RejectionReason.AMPLITUDE_HEAVY
 
 
 # ---------------------------------------------------------------------------
