@@ -181,13 +181,19 @@ class EEGWindowDataset(IterableDataset):
         return probs / probs.sum()
 
     def _open_memmaps(self) -> dict[int, np.memmap]:
-        """Lazily open all shards as memory-maps. Called once per worker."""
+        """Lazily open all shards as memory-maps. Called once per worker.
+
+        Uses ``np.load(mmap_mode="r")`` rather than a raw ``np.memmap``: the
+        shards are ``.npy`` files (written by the harmonisation pipeline via
+        ``np.save``), so they carry a header. A raw ``np.memmap`` reads from
+        byte 0 and would reinterpret that header as data — shifting every
+        sample by the header size and injecting garbage values (which then
+        overflow when squared during z-scoring).
+        """
         memmaps: dict[int, np.memmap] = {}
-        dtype = np.dtype(self._index.get("dtype", "float32"))
         for shard_idx, shard in enumerate(self._index["shards"]):
             path = self._shard_dir / shard["path"]
-            shape = tuple(shard["shape"])
-            memmaps[shard_idx] = np.memmap(path, dtype=dtype, mode="r", shape=shape)
+            memmaps[shard_idx] = np.load(path, mmap_mode="r")
         return memmaps
 
     # ------------------------------------------------------------------
@@ -211,9 +217,10 @@ class EEGWindowDataset(IterableDataset):
         max_offset = segment.end - self.window_samples
         offset = int(rng.integers(segment.start, max_offset + 1))
 
-        # 4. Slice from the memmap.
+        # 4. Slice from the memmap. Copy out of the read-only mmap so the
+        #    returned window is writable (torch.from_numpy requires it).
         shard = memmaps[segment.shard_idx]
-        window = np.asarray(
+        window = np.array(
             shard[:, offset : offset + self.window_samples], dtype=np.float32
         )
         return window

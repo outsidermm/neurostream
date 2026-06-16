@@ -36,11 +36,8 @@ def _make_synthetic_corpus(
     total = sum(sources.values())
     shard = np.random.RandomState(0).randn(n_channels, total).astype(np.float32)
     shard_path = tmp_path / "shard_0000.npy"
-    # Save as raw memmap-style array. np.memmap reads via shape + dtype.
-    fp = np.memmap(shard_path, dtype=np.float32, mode="w+", shape=(n_channels, total))
-    fp[:] = shard
-    fp.flush()
-    del fp
+    # Write a real .npy (with header), matching the production pipeline.
+    np.save(shard_path, shard)
 
     segments: dict[str, list[dict[str, int]]] = {}
     cursor = 0
@@ -65,6 +62,38 @@ def _make_synthetic_corpus(
 # ---------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------
+def test_windows_align_with_npy_header(tmp_path: Path) -> None:
+    """Regression: shards are .npy with a header; the reader must skip it.
+
+    A raw ``np.memmap`` reads from byte 0 and reinterprets the .npy header
+    as data — shifting every sample and injecting garbage that overflows
+    when squared during z-scoring. With a window-sized segment the offset
+    is forced to 0, so the yielded window must equal the shard exactly.
+    """
+    n_channels = 22
+    window = 1000
+    shard = np.random.RandomState(1).randn(n_channels, window).astype(np.float32)
+    shard_path = tmp_path / "shard_0000.npy"
+    np.save(shard_path, shard)
+
+    index = {
+        "version": 1,
+        "window_samples": window,
+        "n_channels": n_channels,
+        "dtype": "float32",
+        "shards": [{"path": shard_path.name, "shape": [n_channels, window]}],
+        "segments_by_source": {"S": [{"shard": 0, "start": 0, "end": window}]},
+    }
+    idx_path = tmp_path / "index.json"
+    idx_path.write_text(json.dumps(index))
+
+    ds = EEGWindowDataset(idx_path, window_samples=window, normalize=False)
+    got = next(iter(ds)).numpy()
+    assert np.array_equal(got, shard)
+    assert np.isfinite(got).all()
+    assert np.abs(got).max() < 100  # sane EEG scale; header garbage would be ~1e31
+
+
 def test_yields_correct_shape(tmp_path: Path) -> None:
     idx = _make_synthetic_corpus(tmp_path)
     ds = EEGWindowDataset(idx, window_samples=1000, seed=42)
@@ -173,10 +202,7 @@ def test_drops_too_short_segments(tmp_path: Path) -> None:
     n_channels = 22
     total = 500
     shard_path = tmp_path / "shard_0000.npy"
-    fp = np.memmap(shard_path, dtype=np.float32, mode="w+", shape=(n_channels, total))
-    fp[:] = np.random.randn(n_channels, total).astype(np.float32)
-    fp.flush()
-    del fp
+    np.save(shard_path, np.random.randn(n_channels, total).astype(np.float32))
 
     index = {
         "version": 1,
