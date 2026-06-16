@@ -9,6 +9,7 @@ weight decay. Everything else (Linear weights, conv weights) gets decayed.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import Any
 
 import torch.nn as nn
 
@@ -17,7 +18,7 @@ def split_weight_decay_param_groups(
     model: nn.Module,
     weight_decay: float,
     no_decay_names: Iterable[str] = ("cls_token", "mask_token"),
-) -> list[dict[str, object]]:
+) -> list[dict[str, Any]]:
     """Build optimizer ``param_groups`` with selective weight decay.
 
     A parameter is placed in the ``no_decay`` group if any of the following

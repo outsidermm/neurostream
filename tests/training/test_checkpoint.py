@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 import torch
@@ -20,7 +21,7 @@ class _Tiny(nn.Module):
         return self.fc(x)
 
 
-def _make(tmp_path: Path, **kwargs: object) -> CheckpointManager:
+def _make(tmp_path: Path, **kwargs: Any) -> CheckpointManager:
     return CheckpointManager(ckpt_dir=tmp_path, **kwargs)
 
 

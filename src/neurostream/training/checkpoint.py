@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -153,11 +153,8 @@ class CheckpointManager:
         extra: dict[str, Any] | None,
     ) -> dict[str, Any]:
         # Unwrap DDP to keep the saved state portable across single/multi-GPU.
-        msd = (
-            model.module.state_dict()
-            if hasattr(model, "module")
-            else model.state_dict()
-        )
+        inner = cast(nn.Module, model.module) if hasattr(model, "module") else model
+        msd = inner.state_dict()
         state: dict[str, Any] = {
             "step": step,
             "model": msd,
