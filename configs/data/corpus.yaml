@@ -3,8 +3,8 @@
 # index_path points to the sidecar JSON emitted by the Days 1-4
 # harmonisation pipeline.
 
-index_path: ${oc.env:NEUROSTREAM_CORPUS_INDEX,data/processed/corpus/index.json}
-window_samples: 1000        # 4 seconds at 250 Hz
+index_path: ${oc.env:NEUROSTREAM_CORPUS_INDEX,data/processed/open_corpus/index.json}
+window_samples: 1000        # 1000 samples; corpus is harmonised to 128 Hz (~7.8 s)
 normalize: true             # per-window z-score per channel
 seed: 0
 
