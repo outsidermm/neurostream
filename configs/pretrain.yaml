@@ -1,0 +1,19 @@
+# Top-level configuration for MAE pretraining.
+#
+# Run with:
+#   torchrun --standalone --nproc_per_node=1 -m neurostream.training.pretrain
+#
+# Override any value on the CLI, e.g.:
+#   torchrun ... model.mask_ratio=0.75 train.total_steps=150000
+
+defaults:
+  - model: mae_base
+  - data: corpus
+  - train: pretrain
+  - _self_
+
+log:
+  tracking_uri: http://127.0.0.1:5000
+  experiment: neurostream-phase2-pretrain
+  run_name: null            # MLflow auto-names if null
+  console_every: 100        # log a line every N steps

@@ -1,0 +1,37 @@
+# Default Phase 2 MAE architecture.
+#
+# Parameter budget:
+#   Encoder: ~4.9M params (6 blocks × dim 256 × 8 heads).
+#   Decoder: ~0.5M params (2 blocks × dim 128 × 4 heads).
+#   Total:   ~5.4M params.
+#
+# Targets a 2-3 day pretraining budget for ~300k steps on a single
+# A100/4090-class GPU at batch size 256.
+
+_target_: neurostream.models.mae.EEGMaskedAutoencoder
+
+# ---- Input ------------------------------------------------------------
+n_channels: 22          # BCI IV 2a channel layout (harmonisation target)
+n_samples: 1000         # 4 seconds at 250 Hz
+patch_samples: 25       # 100 ms patches -> 40 tokens per window
+
+# ---- Encoder ----------------------------------------------------------
+encoder_dim: 256        # 8 heads * 32 dims per head
+encoder_depth: 6
+encoder_heads: 8
+encoder_mlp_ratio: 4.0
+
+# ---- Decoder (asymmetric, smaller) ------------------------------------
+# Decoder is discarded post-pretraining; minimise its capacity.
+decoder_dim: 128
+decoder_depth: 2
+decoder_heads: 4
+decoder_mlp_ratio: 4.0
+
+# ---- Masking ----------------------------------------------------------
+# Ablated in Days 15-19 over {0.25, 0.50, 0.75}.
+mask_ratio: 0.50
+
+# ---- Regularisation / loss -------------------------------------------
+dropout: 0.0            # MAE works well without dropout at this scale
+norm_pix_loss: true     # per-patch target normalisation (He et al. 2022)
