@@ -1,0 +1,38 @@
+# Training hyperparameters for MAE pretraining.
+#
+# Direct port of He et al. 2022 hyperparameters with batch size scaled
+# down to a single-GPU budget. DO NOT tune these in Phase 2 — they work,
+# and tuning them is a Phase-5-scale undertaking. The ablation (Days 15-19)
+# varies mask_ratio, patch_samples, and total_steps only.
+
+# ---- Steps & batching -------------------------------------------------
+total_steps: 300_000        # ~2-3 days on A100/4090-class single GPU
+warmup_steps: 15_000        # 5% of total
+batch_size: 64              # per-GPU; reduced from 256 to fit 8 GB (RTX 5060).
+                            # NOTE: base_lr below is calibrated for 256 — scale up
+                            # batch (and LR) on larger GPUs (A100/5090, >=32 GB).
+num_workers: 8
+prefetch_factor: 2
+
+# ---- Optimizer (AdamW, He et al. 2022) --------------------------------
+base_lr: 1.5e-4
+min_lr: 0.0
+weight_decay: 0.05
+betas: [0.9, 0.95]
+eps: 1.0e-8
+grad_clip: 1.0
+
+# ---- Mixed precision --------------------------------------------------
+# bf16 on Ampere+/Hopper. Falls back to fp16 with GradScaler if you set
+# amp=fp16. Use fp32 only for debugging.
+amp: bf16
+
+# ---- Checkpointing ----------------------------------------------------
+ckpt_dir: ${oc.env:NEUROSTREAM_CKPT_DIR,checkpoints/phase2_pretrain}
+rolling_interval: 10_000
+rolling_keep: 3
+milestones: [50_000, 100_000, 150_000, 200_000, 300_000]
+auto_resume: true
+
+# ---- Reproducibility --------------------------------------------------
+seed: 0

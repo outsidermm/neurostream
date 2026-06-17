@@ -1,0 +1,23 @@
+# Data configuration for MAE pretraining.
+#
+# index_path points to the sidecar JSON emitted by the Days 1-4
+# harmonisation pipeline.
+
+index_path: ${oc.env:NEUROSTREAM_CORPUS_INDEX,data/processed/open_corpus/index.json}
+window_samples: 1000        # 1000 samples; corpus is harmonised to 128 Hz (~7.8 s)
+normalize: true             # per-window z-score per channel
+seed: 0
+
+# Per-source sampling weights. Default (null) = equal weight per source,
+# which oversamples small sources and undersamples large ones. This is
+# the analogue of LLM domain weighting and tends to produce more general
+# representations than uniform-by-sample sampling.
+#
+# To bias toward larger sources, e.g.:
+# source_weights:
+#   PhysionetMI: 1.0
+#   Cho2017: 0.5
+#   Lee2019_MI: 0.5
+#   Stieger2021: 1.0
+#   Schirrmeister2017: 0.3
+source_weights: null
