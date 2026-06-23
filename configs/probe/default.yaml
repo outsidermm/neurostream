@@ -1,0 +1,31 @@
+# Linear-probe hyperparameters.
+#
+# Defaults are conservative; the protocol is sklearn LogisticRegression on
+# top of mean-pooled patch token features, with standardisation. This is
+# the same protocol used in the original MAE paper for ImageNet linear
+# probe — only the dataset and pooling target are different.
+
+# Required: path to a pretrained MAE checkpoint produced by phase 2 pretraining.
+pretrained_checkpoint: ???
+
+# Whether to also run the random-init control in the same pass.
+run_random_control: true
+
+# Feature pooling mode: "cls" | "mean" | "concat".
+pool: mean
+
+# Encoder forward batch size during feature extraction.
+batch_size: 64
+
+# Whether to standardise features per-subject before logistic regression.
+standardize: true
+
+# Logistic regression hyperparameters.
+logreg_c: 1.0           # inverse regularisation strength
+logreg_max_iter: 5000
+
+# Subjects to evaluate. 1-9 is the canonical BCI IV 2a within-subject protocol.
+subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+
+# RNG seed for any stochastic step (logreg LBFGS init, etc.).
+seed: 0

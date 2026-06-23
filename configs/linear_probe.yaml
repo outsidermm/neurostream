@@ -1,0 +1,24 @@
+# Top-level configuration for linear-probe evaluation (Days 10-11).
+#
+# Run with:
+#   python -m scripts.linear_probe \
+#       probe.pretrained_checkpoint=checkpoints/phase2_batch64_1.2m/milestone_step01200000.pt
+#
+# To evaluate at multiple milestones:
+#   for m in 200000 400000 600000 800000 1200000; do
+#       python -m scripts.linear_probe \
+#           probe.pretrained_checkpoint=checkpoints/phase2_batch64_1.2m/milestone_step$(printf %08d $m).pt \
+#           log.run_name=probe_step${m}
+#   done
+
+defaults:
+  - probe: default
+  - _self_
+
+log:
+  tracking_uri: http://127.0.0.1:5000
+  experiment: neurostream-phase2-probe
+  run_name: null
+
+# Where to save the JSON report.
+output_dir: results/linear_probe

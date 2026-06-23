@@ -12,8 +12,8 @@ _target_: neurostream.models.mae.EEGMaskedAutoencoder
 
 # ---- Input ------------------------------------------------------------
 n_channels: 22          # BCI IV 2a channel layout (harmonisation target)
-n_samples: 1000         # 4 seconds at 250 Hz
-patch_samples: 25       # 100 ms patches -> 40 tokens per window
+n_samples: 1000         # 7.8 s at the 128 Hz corpus rate
+patch_samples: 25       # ~195 ms patches at 128 Hz -> 40 tokens per window
 
 # ---- Encoder ----------------------------------------------------------
 encoder_dim: 256        # 8 heads * 32 dims per head
