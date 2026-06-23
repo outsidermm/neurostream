@@ -7,6 +7,7 @@ with no gradients; pooling over patch tokens is configurable.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -82,7 +83,7 @@ def _pool_tokens(tokens: torch.Tensor, pool: PoolMode) -> torch.Tensor:
 
 
 def load_encoder_from_checkpoint(
-    checkpoint_path: str,
+    checkpoint_path: str | Path,
     *,
     map_location: str | torch.device = "cpu",
     strict: bool = True,
@@ -122,7 +123,7 @@ def load_encoder_from_checkpoint(
 
 
 def make_random_init_encoder(
-    reference_checkpoint_path: str,
+    reference_checkpoint_path: str | Path,
     *,
     seed: int = 0,
 ) -> EEGMaskedAutoencoder:

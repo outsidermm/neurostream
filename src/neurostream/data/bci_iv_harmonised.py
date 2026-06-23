@@ -19,7 +19,7 @@ encoder's positional channel order; the other 17 GDF names are generic
 """
 
 import functools
-from typing import Literal
+from typing import Literal, cast
 
 import mne
 import numpy as np
@@ -51,7 +51,8 @@ def _cue_samples_and_labels(
     source_fs: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Cue sample indices (resampled to TARGET_SFREQ) and class labels (0..3)."""
-    events, eid = mne.events_from_annotations(raw, verbose="ERROR")
+    events, eid_raw = mne.events_from_annotations(raw, verbose="ERROR")
+    eid = cast("dict[str, int]", eid_raw)  # mne's return type is loosely typed
     if session == "T":
         # Cue code encodes the class directly.
         inverse = {v: CUE_TRAIN_IDS[k] for k, v in eid.items() if k in CUE_TRAIN_IDS}
@@ -95,7 +96,9 @@ def load_continuous(
     if len(cue_128) != 288:
         raise AssertionError(f"expected 288 trials, got {len(cue_128)}")
 
-    data = raw.get_data(picks="eeg")  # (22, n) volts, Brunner = canonical order
+    # cast: get_data has a return_times overload that unions in a tuple; the
+    # default call returns just the ndarray.
+    data = cast(np.ndarray, raw.get_data(picks="eeg"))  # (22, n) volts, canonical order
     if data.shape[0] != 22:
         raise AssertionError(f"expected 22 EEG channels, got {data.shape[0]}")
 

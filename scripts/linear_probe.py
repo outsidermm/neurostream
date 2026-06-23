@@ -104,6 +104,7 @@ def main(cfg: DictConfig) -> None:
                 checkpoint_path=cfg.probe.pretrained_checkpoint,
             )
             reports = [("pretrained", pretrained_report)]
+            random_report = None
 
         # --- Log + save reports --------------------------------------
         for label, report in reports:
@@ -122,7 +123,7 @@ def main(cfg: DictConfig) -> None:
             logger.info("Saved %s report to %s", label, json_path)
 
         # --- Gap check ---------------------------------------------
-        if cfg.probe.run_random_control:
+        if random_report is not None:
             gap = pretrained_report.mean_accuracy - random_report.mean_accuracy
             mlflow.log_metric("pretrained_minus_random_gap", gap)
             logger.info("\nPretrained-vs-random gap: %.2fpp", gap * 100)

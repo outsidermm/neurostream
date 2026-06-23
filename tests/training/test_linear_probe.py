@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Literal
 
 import numpy as np
@@ -20,7 +21,7 @@ def _make_synthetic_loader(
     n_subjects: int = 3,
     n_trials_per_session: int = 60,
     seed: int = 0,
-) -> "tuple[callable, dict]":
+) -> "tuple[Callable, dict]":
     """Build a synthetic Phase 1 loader and the cached data behind it.
 
     Each subject's labels are linearly separable in *some* projection of

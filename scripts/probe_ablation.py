@@ -18,6 +18,7 @@ Run (no Hydra; logs straight to the sqlite store, no MLflow server needed):
 
 import argparse
 import logging
+from typing import Literal
 
 import mlflow
 import torch
@@ -27,13 +28,15 @@ from neurostream.training.linear_probe import ProbeConfig, run_pretrained_vs_ran
 
 logger = logging.getLogger("probe_ablation")
 
+WindowMode = Literal["pad2s", "pad4s", "continuous"]
+
 DEFAULT_CKPT = (
     r"C:\Users\xjmao\Desktop\neurostream\checkpoints"
     r"\phase2_batch64_1.2m\milestone_step01200000.pt"
 )
 
 # (run_name, harmonise, window, human description)
-CONFIGS = [
+CONFIGS: list[tuple[str, bool, WindowMode, str]] = [
     ("a_raw_pad2s", False, "pad2s", "raw preprocessing + 2s zero-padded (baseline)"),
     ("b_harmonised_pad2s", True, "pad2s", "+bandpass+CAR, still 2s padded"),
     ("c_harmonised_continuous", True, "continuous", "+continuous 1000-sample window"),
