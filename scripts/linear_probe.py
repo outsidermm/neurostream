@@ -8,26 +8,20 @@ To sweep across pretraining milestones, loop over them in a shell script;
 each invocation produces an independent MLflow run that can be compared
 in the UI.
 
-Phase 1 integration:
-    The probe needs a function with signature
-        load_subject(subject_id: int, session: Literal["T", "E"])
-            -> (epochs: np.ndarray, labels: np.ndarray)
-    Phase 1 should expose this from ``neurostream.data.bci_iv_2a``. If your
-    module path differs, update the import below.
+The probe feeds corpus-harmonised BCI IV 2a windows to the frozen encoder
+(see ``data/bci_iv_harmonised``). For the preprocessing/window ablation behind
+this choice, see ``scripts/probe_ablation`` and the Phase 2 notes.
 """
-
-from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Literal
 
 import hydra
 import mlflow
-import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
 
+from neurostream.data.bci_iv_harmonised import make_probe_adapter
 from neurostream.training.linear_probe import (
     ProbeConfig,
     run_pretrained_vs_random,
@@ -38,67 +32,12 @@ from neurostream.training.feature_extract import load_encoder_from_checkpoint
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------
-# Phase 1 data loader adapter
-# ---------------------------------------------------------------------
-def _phase1_load_subject(
-    subject_id: int, session: Literal["T", "E"]
-) -> tuple[np.ndarray, np.ndarray]:
-    """Adapter that calls Phase 1's BCI IV 2a loader and returns preprocessed data.
-
-    This wraps Phase 1's ``load_subject`` so the output matches what the
-    encoder expects: ``(n_trials, 22, 1000)`` float32 epochs and integer labels.
-
-    Phase 1's loader lives in ``neurostream.data.bci_iv_loader`` and returns
-    epochs at TARGET_SFREQ = 128 Hz (the corpus harmonisation rate the encoder
-    was pretrained on — do NOT resample to 250 Hz to "make 4 s = 1000", that is
-    a domain mismatch, not a fix).
-
-    The MAE was pretrained on 1000-sample windows. We request the widest
-    supported window (4 s -> 512 samples at 128 Hz) to maximise real signal,
-    then zero-pad 512 -> 1000. A 4 s window only *reduces* the padding relative
-    to the 2 s default (256 -> 1000); it does not remove it. A padding-free
-    1000 samples would need ~7.81 s, which bleeds into the next trial, so
-    padding is the deliberate compromise.
-    """
-    try:
-        from neurostream.data.bci_iv_loader import load_subject as phase1_loader
-    except ImportError as e:
-        raise ImportError(
-            "Could not import Phase 1's BCI IV 2a loader from "
-            "neurostream.data.bci_iv_loader. Update the import path in "
-            "scripts/linear_probe.py to match your Phase 1 module layout."
-        ) from e
-
-    # 4 s window at 128 Hz -> (288, 22, 512); padded to 1000 below.
-    epochs, labels = phase1_loader(subject_id, session, window_seconds=4.0)
-
-    # Ensure shape (n_trials, 22, 1000) — pad if necessary.
-    if epochs.shape[-1] < 1000:
-        pad = 1000 - epochs.shape[-1]
-        before = pad // 2
-        after = pad - before
-        epochs = np.pad(
-            epochs.astype(np.float32),
-            ((0, 0), (0, 0), (before, after)),
-            mode="constant",
-            constant_values=0.0,
-        )
-    elif epochs.shape[-1] > 1000:
-        # Take centred 1000-sample slice.
-        start = (epochs.shape[-1] - 1000) // 2
-        epochs = epochs[..., start : start + 1000]
-
-    # Per-window z-score per channel. NB this runs AFTER the zero-pad above, so
-    # the stats are computed over 512 real + 488 padded samples (not a clean
-    # real-only 1000-sample window as in pretraining), and the padded region
-    # ends up at -mean/std rather than 0. A known wrinkle, not fixed here.
-    mean = epochs.mean(axis=-1, keepdims=True)
-    std = epochs.std(axis=-1, keepdims=True) + 1e-6
-    epochs = ((epochs - mean) / std).astype(np.float32)
-
-    labels = labels.astype(np.int64)
-    return epochs, labels
+# Validated probe config (docs/phase-2-notes/probe-data-mismatch.md): the encoder
+# was pretrained on corpus-harmonised EEG, so probe windows must be harmonised the
+# same way (128 Hz + 0.5-45 Hz band-pass + common-average reference) or they are
+# out-of-distribution and the probe gap collapses. A 2 s motor-imagery window
+# (padded to 1000) beats both the 4 s and the full continuous window.
+_load_subject = make_probe_adapter(harmonise=True, window="pad2s")
 
 
 # ---------------------------------------------------------------------
@@ -144,7 +83,7 @@ def main(cfg: DictConfig) -> None:
         if cfg.probe.run_random_control:
             pretrained_report, random_report = run_pretrained_vs_random(
                 pretrained_ckpt_path=cfg.probe.pretrained_checkpoint,
-                load_subject=_phase1_load_subject,
+                load_subject=_load_subject,
                 cfg=probe_cfg,
                 device=device,
             )
@@ -158,7 +97,7 @@ def main(cfg: DictConfig) -> None:
             )
             pretrained_report = run_probe(
                 encoder,
-                _phase1_load_subject,
+                _load_subject,
                 probe_cfg,
                 device=device,
                 label="pretrained",

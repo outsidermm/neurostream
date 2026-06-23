@@ -17,7 +17,10 @@ used during pretraining.
 
 import numpy as np
 
-from neurostream.data.bci_iv_loader import TARGET_SFREQ, _window_to_tmin_tmax
+from neurostream.data.bci_iv_loader import TARGET_SFREQ
+
+# Cue-relative epoch windows (tmin, tmax) in seconds, supported by padded_windows.
+_PROBE_WINDOWS = {2.0: (0.5, 2.5), 4.0: (-0.5, 3.5)}
 
 
 def zscore_per_window(windows: np.ndarray) -> np.ndarray:
@@ -70,7 +73,13 @@ def padded_windows(
     TARGET_SFREQ is 256 real samples, centre-padded with zeros to 1000, then
     z-scored over the full (mostly-zero) window.
     """
-    tmin, tmax = _window_to_tmin_tmax(window_seconds)
+    try:
+        tmin, tmax = _PROBE_WINDOWS[window_seconds]
+    except KeyError:
+        raise ValueError(
+            f"window_seconds must be one of {sorted(_PROBE_WINDOWS)}, "
+            f"got {window_seconds}"
+        ) from None
     a = int(round(tmin * TARGET_SFREQ))
     b = int(round(tmax * TARGET_SFREQ))  # exclusive; (b - a) == window_seconds * fs
     win_len = b - a

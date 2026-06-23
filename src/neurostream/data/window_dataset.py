@@ -11,7 +11,7 @@ pipeline)::
     {
       "version": 1,
       "window_samples": 1000,
-      "sampling_rate_hz": 250,
+      "sampling_rate_hz": 128,
       "n_channels": 22,
       "dtype": "float32",
       "shards": [
@@ -292,7 +292,7 @@ def worker_init_fn(worker_id: int) -> None:
     )
 
 
-def estimate_corpus_hours(index_path: Path | str, sample_rate_hz: int = 250) -> float:
+def estimate_corpus_hours(index_path: Path | str, sample_rate_hz: int = 128) -> float:
     """Diagnostic helper: how many hours of EEG does the index describe?"""
     idx = json.loads(Path(index_path).read_text())
     total_samples = 0

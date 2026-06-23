@@ -30,57 +30,27 @@ CUE_TRAIN_IDS = {"769": 0, "770": 1, "771": 2, "772": 3}  # left, right, feet, t
 # The true classes live in a sibling A0XE.mat file (classlabel: int 1..4).
 CUE_TEST_ID = "783"
 
-# Match Lawhern et al. 2018: resample 250 → 128 Hz.
+# Match Lawhern et al. 2018: resample 250 → 128 Hz, epoch [0.5, 2.5] s post-cue.
 TARGET_SFREQ = 128
-
-# Supported epoch windows as (tmin, tmax) seconds relative to cue onset.
-#   2.0 s — Phase 1 / Lawhern 2018 motor-imagery window.
-#   4.0 s — Phase 2 linear-probe window; wider context around the cue.
-#
-# IMPORTANT: at TARGET_SFREQ = 128 Hz a W-second window is W * 128 samples
-# (2.0 s -> 256, 4.0 s -> 512). The MAE encoder consumes 1000-sample windows,
-# so the probe adapter still zero-pads either window up to 1000 — a 4 s window
-# only *reduces* the padding, it does not remove it. A padding-free 1000
-# samples would need a ~7.81 s window, which runs past the trial into the next
-# one. See scripts/linear_probe.py::_phase1_load_subject.
-_WINDOWS: dict[float, tuple[float, float]] = {
-    2.0: (0.5, 2.5),
-    4.0: (-0.5, 3.5),
-}
-
-# Back-compat alias for the default window.
-TMIN, TMAX = _WINDOWS[2.0]
+TMIN, TMAX = 0.5, 2.5
 
 
-def _window_to_tmin_tmax(window_seconds: float) -> tuple[float, float]:
-    try:
-        return _WINDOWS[window_seconds]
-    except KeyError:
-        raise ValueError(
-            f"window_seconds must be one of {sorted(_WINDOWS)}, got {window_seconds}"
-        ) from None
-
-
-def _cache_path(subject_id: int, session: str, window_seconds: float) -> Path:
-    # The default window keeps the legacy filename so existing v3 caches stay
-    # valid; other windows get a distinct tag so they never collide.
-    tag = "" if window_seconds == 2.0 else f"_w{window_seconds:g}"
-    return DATA_CACHE / _DATASET / f"A0{subject_id}{session}_{CACHE_VERSION}{tag}.npz"
+def _cache_path(subject_id: int, session: str) -> Path:
+    return DATA_CACHE / _DATASET / f"A0{subject_id}{session}_{CACHE_VERSION}.npz"
 
 
 def load_subject(
     subject_id: int,
     session: Literal["T", "E"],
-    window_seconds: float = 2.0,  # default preserves Phase 1 behaviour
     use_cache: bool = True,
 ) -> tuple[np.ndarray, np.ndarray]:
-    cache_path = _cache_path(subject_id, session, window_seconds)
+    cache_path = _cache_path(subject_id, session)
 
     if use_cache and cache_path.exists():
         with np.load(cache_path) as f:
             return f["epochs"].astype(np.float32), f["labels"].astype(np.int64)
 
-    epochs, labels = _load_from_gdf(subject_id, session, window_seconds)
+    epochs, labels = _load_from_gdf(subject_id, session)
 
     if use_cache:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -98,13 +68,10 @@ def load_subject(
 def _load_from_gdf(
     subject_id: int,
     session: Literal["T", "E"],
-    window_seconds: float = 2.0,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load one session for one subject. Returns (epochs, labels)."""
     if not 1 <= subject_id <= 9:
         raise ValueError(f"subject_id must be in 1..9, got {subject_id}")
-
-    tmin, tmax = _window_to_tmin_tmax(window_seconds)
 
     path = DATA_RAW / _DATASET / f"A0{subject_id}{session}.gdf"
     raw = mne.io.read_raw_gdf(path, preload=True, verbose="ERROR")
@@ -128,8 +95,8 @@ def _load_from_gdf(
         raw,
         events,
         event_id=cue_codes,
-        tmin=tmin,
-        tmax=tmax - 1.0 / TARGET_SFREQ,
+        tmin=TMIN,
+        tmax=TMAX - 1.0 / TARGET_SFREQ,
         picks="eeg",
         baseline=None,
         preload=True,
