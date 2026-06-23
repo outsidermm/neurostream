@@ -49,16 +49,17 @@ def _phase1_load_subject(
     This wraps Phase 1's ``load_subject`` so the output matches what the
     encoder expects: ``(n_trials, 22, 1000)`` float32 epochs and integer labels.
 
-    Phase 1's loader is expected to live in ``neurostream.data.bci_iv_2a`` with
-    a ``load_subject(subject_id, session) -> (epochs, labels)`` signature
-    returning ``(n_trials, 22, 750)`` at 250 Hz across 3 seconds.
+    Phase 1's loader lives in ``neurostream.data.bci_iv_loader`` and returns
+    epochs at TARGET_SFREQ = 128 Hz (the corpus harmonisation rate the encoder
+    was pretrained on — do NOT resample to 250 Hz to "make 4 s = 1000", that is
+    a domain mismatch, not a fix).
 
-    The MAE was pretrained on 1000-sample windows. We pad/extend the 750-sample
-    BCI IV 2a windows to 1000 samples by sampling a longer epoch window from
-    the same trial. The simplest correct approach: re-extract a 4-second window
-    instead of 3 seconds via the Phase 1 loader if it supports this; otherwise
-    zero-pad symmetrically. We assume Phase 1's loader accepts an optional
-    ``window_samples`` argument; if not, this adapter needs updating.
+    The MAE was pretrained on 1000-sample windows. We request the widest
+    supported window (4 s -> 512 samples at 128 Hz) to maximise real signal,
+    then zero-pad 512 -> 1000. A 4 s window only *reduces* the padding relative
+    to the 2 s default (256 -> 1000); it does not remove it. A padding-free
+    1000 samples would need ~7.81 s, which bleeds into the next trial, so
+    padding is the deliberate compromise.
     """
     try:
         from neurostream.data.bci_iv_loader import load_subject as phase1_loader
@@ -69,7 +70,8 @@ def _phase1_load_subject(
             "scripts/linear_probe.py to match your Phase 1 module layout."
         ) from e
 
-    epochs, labels = phase1_loader(subject_id, session)
+    # 4 s window at 128 Hz -> (288, 22, 512); padded to 1000 below.
+    epochs, labels = phase1_loader(subject_id, session, window_seconds=4.0)
 
     # Ensure shape (n_trials, 22, 1000) — pad if necessary.
     if epochs.shape[-1] < 1000:
@@ -87,7 +89,10 @@ def _phase1_load_subject(
         start = (epochs.shape[-1] - 1000) // 2
         epochs = epochs[..., start : start + 1000]
 
-    # Per-window z-score per channel (mirrors the pretraining normalisation).
+    # Per-window z-score per channel. NB this runs AFTER the zero-pad above, so
+    # the stats are computed over 512 real + 488 padded samples (not a clean
+    # real-only 1000-sample window as in pretraining), and the padded region
+    # ends up at -mean/std rather than 0. A known wrinkle, not fixed here.
     mean = epochs.mean(axis=-1, keepdims=True)
     std = epochs.std(axis=-1, keepdims=True) + 1e-6
     epochs = ((epochs - mean) / std).astype(np.float32)
