@@ -13,8 +13,18 @@ transfers to BCI IV 2a motor imagery: fine-tuned encoder ≥ **71% mean accuracy
 ## Definition of done
 
 - Fine-tuned model clears ≥71% mean accuracy across the 9 subjects.
-- The full pipeline (pretrain → probe → fine-tune → eval) reproduces from a
-  short, documented script sequence with no manual intervention.
+- Linear-probe and full-fine-tune numbers reported **separately** (per the
+  original spec), each against the random-init control.
+- The "held-out" claim is backed by a source-isolation test (step 4b) — no
+  pretraining shard contains BCI IV 2a data.
+- The full pipeline reproduces from a short, documented script sequence with no
+  manual intervention — a colleague with Docker + a CUDA GPU can run
+  `download-pretrained → finetune → evaluate` and land within ±2pp per subject,
+  and separately re-run the corpus build + pretrain end-to-end. The scripts that
+  exist (`pretrain.sh`, `ingest_open_corpus.py`, `probe_*`) need a fine-tune
+  script and an `evaluate`/report script added to complete this surface.
+- Corpus shards + milestone checkpoints tracked in DVC (not git); sidecar JSON
+  committed to git. DVC is not yet initialised.
 - `v0.2.0` tagged, README + ADRs updated to match what was actually run.
 
 ## Foundations already in place
@@ -80,15 +90,38 @@ an honest "probe accuracy vs. pretraining duration" curve — and to learn wheth
 the encoder genuinely plateaued early or whether that plateau was an artifact of
 the preprocessing bug suppressing signal equally at every checkpoint.
 
+### 4b. Source-isolation test — defends the "held-out" claim
+
+A one-time corpus audit: assert that no pretraining shard contains BCI IV 2a
+data (the held-out evaluation set). The five corpus sources use different
+subjects and equipment, so overlap is unlikely — but a one-line assertion turns
+"unlikely" into "verified" and bulletproofs the held-out claim against scrutiny.
+Cheap, independent of the loader fix; do it before reporting any transfer number.
+
 ### 5. Days 12–14 — Fine-tuning
 
-Pretrained encoder + new classification head, end-to-end fine-tune:
-- Layer-wise LR decay (decay factor 0.65–0.75).
-- Mixup (alpha=0.2).
-- Per-subject independent fine-tuning (9 runs), reported as mean ± std.
-- Target: ≥71% mean accuracy (≥3pp over Phase 1).
+Pretrained encoder (decoder dropped) + new mean-pool classification head,
+end-to-end fine-tune, per-subject (9 independent runs, reported mean ± std).
+Recipe from the original spec (not yet run — treat as the starting recipe, not a
+validated config):
 
-Uses the fixed canonical loader from step 1.
+| Hyperparameter | Value |
+|---|---|
+| optimizer | AdamW, weight_decay 0.05 |
+| base LR | 1e-3 |
+| layer-wise LR decay | 0.7 (range 0.65–0.75) — lower encoder layers get smaller LRs, head gets base LR |
+| batch size | 32 |
+| epochs | 100, early stopping (patience 15 on val loss) |
+| schedule | 10-epoch linear warmup, then cosine decay |
+| mixup | alpha 0.2 |
+
+Target: ≥71% mean accuracy (≥3pp over Phase 1), and above EEGNet on ≥6/9
+subjects (subject variance is real — you won't dominate every subject).
+
+Uses the fixed canonical loader from step 1. If fine-tune underperforms,
+diagnose in order: did it converge? → is LLRD breaking (try uniform LR)? → are
+the pretrained weights actually loaded (compare an encoder weight sum before/
+after `load_state_dict`)? → is the mask ratio wrong (defer to step 6)?
 
 ### 6. Days 15–19 — Ablation study
 
@@ -100,8 +133,17 @@ Uses the fixed canonical loader from step 1.
 
 ### 7. Days 20–21 — Documentation and release
 
-README updates, additional ADRs (including the step-2 decision), `v0.2.0`
-release tag. Blocked on the above producing a real, verified result to document.
+- README updates (Phase 2 results table alongside Phase 1, link to the ablation
+  report), additional ADRs including the step-2 decision.
+- **Reproducibility scripts** to complete the DoD surface: a per-subject
+  fine-tune script and an `evaluate`/HTML-report script (the ablation report
+  lands in `results/`), plus a `download-pretrained` path so a reviewer can
+  reproduce eval without re-pretraining.
+- **DVC**: initialise DVC, configure a non-git remote, and track the harmonised
+  corpus shards + milestone checkpoints (sidecar JSON stays in git). Raw MOABB
+  sources and BCI IV 2a are re-downloadable and stay untracked.
+- `v0.2.0` release tag; upload the winning ablation checkpoint as a release
+  asset. Blocked on the above producing a real, verified result to document.
 
 ## Dependency summary
 
@@ -109,5 +151,6 @@ release tag. Blocked on the above producing a real, verified result to document.
 1 (loader fix) ──┬──> 4 (re-run sweep)
                  └──> 5 (fine-tune) ──> 6 (ablation) ──> 7 (docs + v0.2.0)
 2 (Hz decision) ─────> 7 (record as ADR)
-3 (bootstrap CI) ── optional, independent
+3 (bootstrap CI) ─── optional, independent
+4b (source-isolation) ─── independent; precedes reporting any transfer number
 ```
