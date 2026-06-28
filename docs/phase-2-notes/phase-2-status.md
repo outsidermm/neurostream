@@ -74,10 +74,26 @@ the corpus + re-pretrain at 250 Hz. Tracked as a decision item in the plan.
 - Bootstrap CI on the preprocessing-fixed gap — *substantively already done*
   via the 3-seed control sweep in `probe-data-mismatch.md`; only a formal
   paired bootstrap over the 9 subjects remains, and it is optional, not a gate.
-- Port the band-pass + CAR fix into `bci_iv_loader.py` (**blocking** — see above).
+- Port the band-pass + CAR fix into `bci_iv_loader.py` — **superseded for the
+  fine-tune path.** The canonical loader emits 256-sample (2 s) epochs, but the
+  encoder hard-requires 1000 samples (`patch_embed.py` raises otherwise), so
+  filtering it would not unblock fine-tuning. The fine-tune trainer instead
+  reuses the tested harmonised adapter
+  (`make_probe_adapter(harmonise=True, window="pad2s")`) — exact parity with the
+  validated probe distribution. Porting the fix into the canonical loader
+  remains worthwhile only for Phase-1-style EEGNet consistency, not as a gate.
 - Re-run the milestone sweep (400k→1.2M) with fixed preprocessing — the
   existing flat-gap sweep used the broken probe pipeline.
-- Days 12–14: fine-tuning (LLRD, mixup, per-subject end-to-end).
+- Days 12–14 fine-tuning — **framework landed, run pending.** Implemented and
+  tested (TDD): `models/mae_classifier.py` (encoder + mean-pool + head),
+  `training/optim.py::param_groups_llrd` (layer-wise LR decay via the
+  scheduler's `lr_scale`), `training/mixup.py`, `training/finetune.py`
+  (per-subject T-train/val → E-test, warmup→cosine, early stopping),
+  `configs/finetune.yaml` + `configs/train/finetune.yaml`, `scripts/finetune.py`.
+  Real-data wiring verified on A03 (adapter → `(288, 22, 1000)` → trainer →
+  session-E number). The per-subject mean±std vs the ≥71% target still needs a
+  run against the pretrained checkpoint on the GPU host (no checkpoint on the
+  dev Mac).
 - Days 15–19: ablation (mask ratio × pretraining duration; patch-size axis
   already dropped from scope under the batch-64 compute budget).
 - Days 20–21: README updates, additional ADRs, `v0.2.0` release tag.
