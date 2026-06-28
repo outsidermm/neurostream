@@ -234,7 +234,9 @@ def test_harmonise_lee2019_mi_passes_despite_missing_fcz():
     rng = np.random.default_rng(0)
     n_samples = 70 * 500
     data = rng.standard_normal((len(channels_without_fcz), n_samples)) * 10e-6
-    info = mne.create_info(ch_names=list(channels_without_fcz), sfreq=500.0, ch_types="eeg")
+    info = mne.create_info(
+        ch_names=list(channels_without_fcz), sfreq=500.0, ch_types="eeg"
+    )
     raw = mne.io.RawArray(data, info, verbose="ERROR")
 
     out, reason = harmonise(raw, HarmoniseConfig(), source="Lee2019_MI")

@@ -7,7 +7,9 @@ from neurostream.data.channels import BCI_IV_2A_22_CHANNELS
 from neurostream.preprocessing.missing_channels import ensure_channels
 
 
-def _make_raw_without_fcz(fs: float = 128.0, n_seconds: float = 10.0) -> mne.io.RawArray:
+def _make_raw_without_fcz(
+    fs: float = 128.0, n_seconds: float = 10.0
+) -> mne.io.RawArray:
     channels = [ch for ch in BCI_IV_2A_22_CHANNELS if ch != "FCz"]
     n_samples = int(fs * n_seconds)
     data = np.random.default_rng(0).standard_normal((len(channels), n_samples)) * 10e-6
