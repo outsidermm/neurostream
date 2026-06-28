@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 import torch
 import torch.nn as nn
@@ -104,12 +106,12 @@ def test_llrd_scales_head_block_and_stem() -> None:
     assert scale[id(clf.head[-1].weight)] == pytest.approx(1.0)
     # Last encoder block (layer depth): decay**1
     assert scale[
-        id(clf.encoder.encoder_blocks[depth - 1].norm1.weight)
+        id(cast(nn.LayerNorm, clf.encoder.encoder_blocks[depth - 1].norm1).weight)
     ] == pytest.approx(decay**1)
     # First encoder block (layer 1): decay**(depth-0)
-    assert scale[id(clf.encoder.encoder_blocks[0].norm1.weight)] == pytest.approx(
-        decay**depth
-    )
+    assert scale[
+        id(cast(nn.LayerNorm, clf.encoder.encoder_blocks[0].norm1).weight)
+    ] == pytest.approx(decay**depth)
     # Patch-embed stem (layer 0): decay**(depth+1)
     assert scale[id(clf.encoder.patch_embed.proj.weight)] == pytest.approx(
         decay ** (depth + 1)
@@ -142,7 +144,10 @@ def test_llrd_excludes_frozen_params() -> None:
     groups = param_groups_llrd(clf, base_lr=1e-3, decay=0.7, weight_decay=0.05)
     flat_ids = {id(p) for g in groups for p in g["params"]}
     # No decoder param should appear.
-    assert id(clf.encoder.decoder_blocks[0].norm1.weight) not in flat_ids
+    assert (
+        id(cast(nn.LayerNorm, clf.encoder.decoder_blocks[0].norm1).weight)
+        not in flat_ids
+    )
 
 
 def test_llrd_groups_usable_by_adamw_with_apply_lr() -> None:

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import torch
+import torch.nn as nn
 
 from neurostream.models.mae import EEGMaskedAutoencoder
 from neurostream.models.mae_classifier import MAEClassifier
@@ -102,7 +105,8 @@ def test_train_one_subject_smoke() -> None:
         mixup_alpha=0.2,
     )
 
-    before = clf.head[-1].weight.detach().clone()
+    head_weight = cast(nn.Linear, clf.head[-1]).weight
+    before = head_weight.detach().clone()
     result = train_one_subject(
         clf,
         train_x,
@@ -117,7 +121,7 @@ def test_train_one_subject_smoke() -> None:
     )
 
     # Training actually moved the head weights.
-    assert not torch.equal(before, clf.head[-1].weight.detach())
+    assert not torch.equal(before, head_weight.detach())
     assert 0.0 <= result.test_accuracy <= 1.0
     assert 1 <= result.epochs_run <= cfg.epochs
     assert np.isfinite(result.best_val_loss)
