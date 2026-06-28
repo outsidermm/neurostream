@@ -68,7 +68,13 @@ def test_missing_checkpoint_file_is_not_an_error(tmp_path):
 
 def test_rejected_entries_persisted_and_reloaded(tmp_path):
     path = tmp_path / "checkpoint.json"
-    entry = {"source": "Cho2017", "subject": 5, "session": "0", "run": "0", "reason": "TOO_SHORT"}
+    entry = {
+        "source": "Cho2017",
+        "subject": 5,
+        "session": "0",
+        "run": "0",
+        "reason": "TOO_SHORT",
+    }
     cp1 = CheckpointManager(path)
     cp1.mark_done("Cho2017", 5, rejected=[entry])
 
@@ -80,7 +86,9 @@ def test_rejected_accumulates_across_subjects(tmp_path):
     path = tmp_path / "checkpoint.json"
     cp = CheckpointManager(path)
     cp.mark_done("PhysionetMI", 1, rejected=[{"reason": "TOO_SHORT"}])
-    cp.mark_done("PhysionetMI", 2, rejected=[{"reason": "NAN_HEAVY"}, {"reason": "TOO_SHORT"}])
+    cp.mark_done(
+        "PhysionetMI", 2, rejected=[{"reason": "NAN_HEAVY"}, {"reason": "TOO_SHORT"}]
+    )
     assert len(cp.rejected) == 3
 
 
