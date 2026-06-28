@@ -1,0 +1,44 @@
+# Top-level configuration for MAE fine-tuning on BCI IV 2a (Phase 2, Days 12-14).
+#
+# Run with:
+#   python -m scripts.finetune \
+#       finetune.pretrained_checkpoint=checkpoints/phase2_batch64_1.2m/milestone_step01200000.pt
+#
+# MVP smoke (one subject, no mixup):
+#   python -m scripts.finetune \
+#       finetune.pretrained_checkpoint=<ckpt> finetune.subjects=[3] \
+#       train.mixup_alpha=0 run_name=ft_mvp_s3
+
+defaults:
+  - model: mae_base       # architecture; the checkpoint must match it
+  - train: finetune       # fine-tune recipe (LR, LLRD, mixup, early stopping)
+  - _self_
+
+seed: 42
+
+finetune:
+  # Required: path to a pretrained MAE checkpoint from Phase 2 pretraining.
+  pretrained_checkpoint: ???
+  # Also run the random-init control (fine-tuning must beat it).
+  run_random_control: true
+  # Subjects (1-9 = canonical BCI IV 2a within-subject protocol).
+  subjects: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+  n_classes: 4
+  # Data harmonisation: must match the validated probe distribution.
+  # `pad2s` = 2 s motor-imagery window padded to 1000 samples (won the probe
+  # ablation; see scripts/linear_probe.py + docs/phase-2-notes).
+  harmonise: true
+  window: pad2s
+
+log:
+  tracking_uri: http://127.0.0.1:5000
+  experiment: neurostream-phase2-finetune
+  run_name: null
+
+output_dir: results/finetune
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}

@@ -1,0 +1,21 @@
+# Fine-tune recipe for the pretrained MAE on BCI IV 2a (Phase 2, Days 12-14).
+#
+# From the original spec (treat as the starting recipe, not yet validated at
+# scale). Lower encoder layers get exponentially smaller LRs via layer-wise LR
+# decay; the head trains at base_lr. Warmup→cosine over the full epoch budget.
+
+# ---- Optimiser --------------------------------------------------------
+base_lr: 1.0e-3
+llrd_decay: 0.70          # layer-wise LR decay (range 0.65-0.75)
+weight_decay: 0.05
+
+# ---- Schedule / batching ----------------------------------------------
+batch_size: 32
+epochs: 100
+warmup_epochs: 10         # linear warmup, then cosine decay
+patience: 15              # early stopping on val loss
+
+# ---- Regularisation ---------------------------------------------------
+mixup_alpha: 0.2
+dropout: 0.5              # classifier-head dropout
+val_fraction: 0.2         # stratified train/val split on session T
