@@ -121,7 +121,7 @@ def load_continuous(
 
 def make_probe_adapter(
     harmonise: bool,
-    window: Literal["pad2s", "pad4s", "continuous"],
+    window: Literal["pad2s", "pad4s", "pad6s", "pad7s", "continuous"],
     n_samples: int = 1000,
 ):
     """Build a ``(subject_id, session) -> (epochs, labels)`` probe adapter.
@@ -147,8 +147,8 @@ def make_probe_adapter(
                     "and were zero-padded",
                     subject_id, session, n_padded, len(cue),
                 )
-        elif window in ("pad2s", "pad4s"):
-            seconds = 2.0 if window == "pad2s" else 4.0
+        elif window in ("pad2s", "pad4s", "pad6s", "pad7s"):
+            seconds = {"pad2s": 2.0, "pad4s": 4.0, "pad6s": 6.0, "pad7s": 7.0}[window]
             epochs = padded_windows(
                 data, cue, window_seconds=seconds, n_samples=n_samples
             )
