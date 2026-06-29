@@ -64,6 +64,8 @@ def _finetune_variant(
             device=device,
             random_init=random_init,
             seed=ft_cfg.seed,
+            pool=ft_cfg.pool,
+            head_hidden_dim=ft_cfg.head_hidden_dim,
         )
 
         def _log(metrics: dict[str, float], step: int, _l: str = label) -> None:
@@ -138,6 +140,10 @@ def main(cfg: DictConfig) -> None:
         val_fraction=cfg.train.val_fraction,
         seed=cfg.seed,
         n_classes=cfg.finetune.n_classes,
+        pool=cfg.train.pool,
+        head_hidden_dim=cfg.train.head_hidden_dim,
+        label_smoothing=cfg.train.label_smoothing,
+        freeze_encoder_epochs=cfg.train.freeze_encoder_epochs,
     )
 
     load_subject = make_probe_adapter(
