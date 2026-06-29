@@ -54,6 +54,10 @@ class FinetuneConfig:
     val_fraction: float = 0.2
     seed: int = 42
     n_classes: int = 4
+    pool: str = "mean"
+    head_hidden_dim: int = 0
+    label_smoothing: float = 0.0
+    freeze_encoder_epochs: int = 0
 
 
 @dataclass
@@ -103,6 +107,8 @@ def build_classifier(
     device: torch.device | str = "cpu",
     random_init: bool = False,
     seed: int = 0,
+    pool: str = "mean",
+    head_hidden_dim: int = 0,
 ) -> MAEClassifier:
     """Build an :class:`MAEClassifier` from a pretrained (or random) encoder.
 
@@ -120,7 +126,7 @@ def build_classifier(
         encoder = load_encoder_from_checkpoint(
             checkpoint_path, map_location=device, strict=True
         )
-    clf = MAEClassifier(encoder, n_classes=n_classes, dropout=dropout)
+    clf = MAEClassifier(encoder, n_classes=n_classes, dropout=dropout, pool=pool, head_hidden_dim=head_hidden_dim)
     freeze_unused_decoder(clf)
     return clf.to(device)
 
@@ -218,11 +224,16 @@ def train_one_subject(
         clf, base_lr=cfg.base_lr, decay=cfg.llrd_decay, weight_decay=cfg.weight_decay
     )
     optimizer = torch.optim.AdamW(groups, lr=cfg.base_lr, betas=(0.9, 0.95))
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=cfg.label_smoothing)
 
     steps_per_epoch = max(1, len(train_loader))
     total_steps = cfg.epochs * steps_per_epoch
     warmup_steps = min(cfg.warmup_epochs * steps_per_epoch, total_steps - 1)
+
+    freeze_epochs = cfg.freeze_encoder_epochs
+    if freeze_epochs > 0:
+        for p in clf.encoder.parameters():
+            p.requires_grad = False
 
     early = EarlyStopping(cfg.patience)
     best_state = copy.deepcopy(clf.state_dict())
@@ -232,6 +243,11 @@ def train_one_subject(
     epochs_run = 0
 
     for epoch in range(1, cfg.epochs + 1):
+        if freeze_epochs > 0 and epoch == freeze_epochs + 1:
+            for p in clf.encoder.parameters():
+                p.requires_grad = True
+            early = EarlyStopping(cfg.patience)
+
         epochs_run = epoch
         clf.train()
         train_loss, n = 0.0, 0
