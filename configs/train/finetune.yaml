@@ -19,3 +19,13 @@ patience: 15              # early stopping on val loss
 mixup_alpha: 0.2
 dropout: 0.5              # classifier-head dropout
 val_fraction: 0.2         # stratified train/val split on session T
+
+# ---- Pooling ----------------------------------------------------------
+pool: mean                # "mean" | "cls" | "both"
+
+# ---- Head architecture ------------------------------------------------
+head_hidden_dim: 0        # 0 = single linear; >0 adds a hidden MLP layer
+label_smoothing: 0.0
+
+# ---- Two-stage training -----------------------------------------------
+freeze_encoder_epochs: 0  # >0: freeze encoder for first N epochs, then unfreeze

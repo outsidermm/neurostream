@@ -16,7 +16,10 @@ Tagged `v0.1.0`. EEGNet baseline reproduced at ~67–68% mean accuracy
 hygiene pass (secrets sweep, dataset terms compliance, no private paths in
 committed docs) before making the repo public has **not** been done yet.
 
-## Phase 2 — pretraining done, evaluation in progress
+## Phase 2 — complete (target missed; proceeding to Phase 3)
+
+Fine-tuning ran and reached **61.50% mean session-E accuracy** (target was ≥71%).
+Full sweep log, diagnosis, and AI-usage note: [`finetune-results.md`](finetune-results.md).
 
 ### Done
 
@@ -30,6 +33,9 @@ committed docs) before making the repo public has **not** been done yet.
 - **Linear probe built and run** (frozen encoder + per-subject
   `LogisticRegression` on mean-pooled patch tokens, with a random-init
   control).
+- **End-to-end fine-tuning run and swept.** Best result 61.50% with
+  `rolling_step01160000`, pad4s window, mean pool, lr=1e-4, batch=16.
+  See `finetune-results.md` for full experiment log.
 
 ### The linear-probe data mismatch (root cause found)
 
@@ -84,19 +90,12 @@ the corpus + re-pretrain at 250 Hz. Tracked as a decision item in the plan.
   remains worthwhile only for Phase-1-style EEGNet consistency, not as a gate.
 - Re-run the milestone sweep (400k→1.2M) with fixed preprocessing — the
   existing flat-gap sweep used the broken probe pipeline.
-- Days 12–14 fine-tuning — **framework landed, run pending.** Implemented and
-  tested (TDD): `models/mae_classifier.py` (encoder + mean-pool + head),
-  `training/optim.py::param_groups_llrd` (layer-wise LR decay via the
-  scheduler's `lr_scale`), `training/mixup.py`, `training/finetune.py`
-  (per-subject T-train/val → E-test, warmup→cosine, early stopping),
-  `configs/finetune.yaml` + `configs/train/finetune.yaml`, `scripts/finetune.py`.
-  Real-data wiring verified on A03 (adapter → `(288, 22, 1000)` → trainer →
-  session-E number). The per-subject mean±std vs the ≥71% target still needs a
-  run against the pretrained checkpoint on the GPU host (no checkpoint on the
-  dev Mac).
-- Days 15–19: ablation (mask ratio × pretraining duration; patch-size axis
-  already dropped from scope under the batch-64 compute budget).
-- Days 20–21: README updates, additional ADRs, `v0.2.0` release tag.
+- Days 12–14 fine-tuning — **done.** 61.50% mean accuracy. See `finetune-results.md`.
+- Days 15–19: ablation (mask ratio × pretraining duration) — **skipped.** The
+  fine-tune result misses the target by 9.5pp; re-running the probe sweep under
+  ablation conditions would not close that gap. Deprioritised in favour of Phase 3.
+- Days 20–21: README updates, ADRs, `v0.2.0` tag — **pending**, blocked on
+  finalising Phase 2 docs (this PR closes the fine-tuning portion).
 
 ### Investigation artefacts now in the repo
 

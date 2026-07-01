@@ -20,7 +20,7 @@ import numpy as np
 from neurostream.data.bci_iv_loader import TARGET_SFREQ
 
 # Cue-relative epoch windows (tmin, tmax) in seconds, supported by padded_windows.
-_PROBE_WINDOWS = {2.0: (0.5, 2.5), 4.0: (-0.5, 3.5)}
+_PROBE_WINDOWS = {2.0: (0.5, 2.5), 4.0: (-0.5, 3.5), 6.0: (-0.5, 5.5), 7.0: (-0.5, 6.5)}
 
 
 def zscore_per_window(windows: np.ndarray) -> np.ndarray:
