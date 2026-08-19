@@ -1,131 +1,40 @@
 # NeuroStream
 
-**Self-supervised EEG foundation model with a sub-10ms production inference platform.**
-
+**A research-to-production ML engineering portfolio project: EEG motor-imagery classification, built phase by phase from a reproducible baseline toward a low-latency inference engine.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/outsidermm/neurostream/ci.yml?branch=main&label=CI)](https://github.com/outsidermm/neurostream/actions)
 [![Python](https://img.shields.io/badge/python-3.12-blue)](pyproject.toml)
-[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-NeuroStream classifies motor-imagery EEG signals in real time — fast enough to drive brain–computer interface control loops. It pairs a masked-autoencoder foundation model pretrained on 25k clinical recordings with a zero-allocation C++ inference engine, wrapped in a reproducible MLOps platform (DVC, MLflow, Kubernetes, Prometheus).
+NeuroStream classifies motor-imagery EEG signals (BCI Competition IV Dataset 2a). The point of the project isn't research novelty — it's demonstrating the full pipeline, end to end, and understanding every failure mode along the way: a paper-faithful supervised baseline, a self-supervised pretraining experiment (including where it fell short of target), and — planned — a low-latency C++ inference path and the MLOps scaffolding around it.
 
-> **Status:** Active development. See [Roadmap](#roadmap) for what's shipped vs. planned.
-
----
-
-## Demo
-
-![architecture](docs/assets/architecture.svg)
-
-| Metric | NeuroStream (C++) | PyTorch baseline | Speedup |
-|---|---|---|---|
-| p50 latency | 3.1 ms | 58 ms | 18.7× |
-| p99 latency | 7.2 ms | 142 ms | 19.7× |
-| Throughput | 14,200 req/s | 760 req/s | 18.7× |
-| Memory (RSS) | 48 MB | 1.3 GB | 27× |
-| Container size | 51 MB (distroless) | 4.2 GB | 82× |
-
-Measured on AWS `c7i.2xlarge`, 10k-request sustained load, ONNX Runtime 1.19, batch size 1. Full methodology in [`docs/benchmarks.md`](docs/benchmarks.md).
+> **Status:** Phases 1–2 complete. See [Roadmap](#roadmap) for what's shipped vs. planned.
 
 ---
 
-## What this project is
+## What's actually built
 
-Three systems that meet in the middle:
+**Phase 1 — EEGNet baseline (done, `v0.1.0`).** A PyTorch port of Lawhern et al. 2018's EEGNet, reproduced against the paper's reference Keras implementation (not just the paper PDF — matching its `max_norm` weight constraints was the single biggest accuracy fix). Stratified 4-fold CV on session T, evaluated on session E, within-subject protocol across all 9 subjects.
 
-**A foundation model for EEG.** A masked autoencoder pretrained on the [TUH EEG Corpus](https://isip.piconepress.com/projects/nedc/html/tuh_eeg/) (25,000 recordings, 1.7 TB). Linear probing on BCI Competition IV Dataset 2a reaches **72% accuracy**, within 5 points of fully-supervised SOTA while using 100× less labeled data.
+**Phase 2 — Self-supervised MAE pretraining (done, target missed, documented).** A masked-autoencoder transformer (He et al. 2022, adapted for EEG — temporal patches, 50% mask ratio) pretrained on an open EEG motor-imagery corpus, then evaluated by linear probe and end-to-end fine-tuning on BCI IV 2a:
 
-**A production inference engine.** C++20 with AVX2-vectorized preprocessing, a lock-free SPSC ring buffer for the producer/consumer boundary, and ONNX Runtime for the forward pass. Zero allocations on the hot path, verified via a custom allocator that aborts on `malloc` post-warmup.
+- Linear probe: pretrained encoder beats a random-init control by **+14.18pp** (3-seed sweep), confirming the pretraining does transfer.
+- Fine-tuning reached **61.50%** mean session-E accuracy — short of the ≥71% target, and below the EEGNet baseline. The miss is root-caused and written up (architecture mismatch, VRAM-constrained pretraining batch size, small per-subject labeled set) rather than left unexplained. See [`docs/phase-2-notes/finetune-results.md`](docs/phase-2-notes/finetune-results.md).
 
-**An MLOps platform.** DVC-versioned datasets, MLflow model registry with ONNX numerical-parity gates, Helm-deployable to k3s or EKS, Prometheus SLO dashboards with multi-window multi-burn-rate alerting.
-
----
-
-## Architecture
-
-```
-┌────────────────────────────────────────────────────────────────────┐
-│  Training plane                                                    │
-│  TUH EEG (S3, DVC-versioned) → MAE pretraining → BCI IV finetune   │
-│                                ↓                                   │
-│                         MLflow registry                            │
-│                                ↓                                   │
-│                      ONNX export + parity gate (CI)                │
-└────────────────────────────────────────────────────────────────────┘
-                                 ↓
-┌────────────────────────────────────────────────────────────────────┐
-│  Serving plane                                                     │
-│  EEG stream → ring buffer → SIMD preprocessing → ONNX forward      │
-│                                                        ↓           │
-│                                                   prediction       │
-│                                                        ↓           │
-│              Prometheus metrics → Grafana SLO dashboards           │
-└────────────────────────────────────────────────────────────────────┘
-```
-
-Full architecture walkthrough with rationale: [`docs/architecture.md`](docs/architecture.md).
+Full status snapshot: [`docs/phase-2-notes/phase-2-status.md`](docs/phase-2-notes/phase-2-status.md).
 
 ---
 
-## Quickstart
+## Results
 
-**Requirements:** Docker (with BuildKit), ~8 GB free disk. GPU optional for training.
+| Method | BCI IV 2a mean accuracy | Labeled data used |
+|---|---|---|
+| EEGNet baseline (Phase 1, this repo) | **69.2%** | 100% |
+| Published EEGNet (Lawhern et al. 2018) | 71.1% | 100% |
+| MAE linear probe vs. random-init control | +14.18pp gap | 100% (frozen encoder) |
+| MAE + end-to-end fine-tune (Phase 2, this repo) | 61.50% | 100% |
 
-```bash
-git clone https://github.com/YOUR_HANDLE/neurostream.git
-cd neurostream
-
-# Bring up the full local stack: MLflow, MinIO, Prometheus, Grafana, inference server
-docker compose up -d
-
-# Send a sample EEG window to the inference server
-./scripts/demo-inference.sh
-
-# Visit the dashboards
-open http://localhost:3000   # Grafana (admin/admin)
-open http://localhost:5000   # MLflow
-```
-
-For development inside the pinned toolchain (CUDA 12.4, Python 3.12, Clang 18):
-
-```bash
-code .   # then "Reopen in Container"
-```
-
-To reproduce the published benchmarks from scratch:
-
-```bash
-dvc pull                      # fetch versioned datasets + checkpoints
-dvc repro                     # re-run pipeline: preprocess → pretrain → finetune → export
-./scripts/bench.sh            # run micro-benchmarks, produce benchmarks.json
-```
-
----
-
-## Tech stack
-
-| Layer | Tools |
-|---|---|
-| **ML** | PyTorch 2.4, ONNX Runtime 1.19, MNE-Python, Hydra |
-| **Systems** | C++20, CMake, AVX2 intrinsics, GoogleTest, Google Benchmark |
-| **MLOps** | DVC, MLflow, MinIO (S3-compatible) |
-| **Packaging** | Multi-stage Docker, distroless, `cosign`-signed, multi-arch (amd64 + arm64) |
-| **Orchestration** | k3s (local), Helm, Terraform (AWS EKS + Jetson edge profiles) |
-| **Observability** | Prometheus, Grafana, `prometheus-cpp`, Prometheus Adapter (custom-metrics HPA) |
-| **CI/CD** | GitHub Actions, `ccache`, ASAN/TSAN/UBSAN matrix, benchmark regression gates |
-
----
-
-## Highlights
-
-**Latency regression gate in CI.** Every PR runs the Google Benchmark suite against a baseline stored on `main`. If p99 on any hot-path benchmark regresses more than 5%, the PR is blocked and a diff table is posted as a comment. The same pattern HFT firms use internally. See [`.github/workflows/bench.yml`](.github/workflows/bench.yml).
-
-**ONNX parity gate.** Model promotion in MLflow triggers a workflow that exports to ONNX and asserts `max(|pytorch_out - onnx_out|) < 1e-5` on a fixed test batch. Catches silent breakage from BatchNorm-in-eval, dynamic shapes, and unsupported ops *before* they reach production. See [`scripts/validate_onnx_parity.py`](scripts/validate_onnx_parity.py).
-
-**Autoscaling on p99 latency, not CPU.** The HPA uses Prometheus Adapter to scale on a custom metric (`inference_latency_seconds:p99_5m`) rather than CPU utilization. Defended by the SLO: p99 < 10 ms over 5-minute windows, 99.9% target. Burn-rate alerts follow the Google SRE multi-window pattern. See [`observability/prometheus/rules.yml`](observability/prometheus/rules.yml).
-
-**Zero-allocation hot path.** The inference request handler is verified allocation-free via a debug allocator that aborts on `malloc`/`new` after warmup. Ring buffer, preprocessing scratch space, and ONNX I/O tensors are all pre-allocated. See [`cpp/src/inference_server.cpp`](cpp/src/inference_server.cpp).
+Phase 1 detail and per-subject breakdown: [`docs/phase-1-notes/04-paper-faithful-reproduction.md`](docs/phase-1-notes/04-paper-faithful-reproduction.md). Phase 2 experiment log and honest post-mortem on the 71% miss: [`docs/phase-2-notes/finetune-results.md`](docs/phase-2-notes/finetune-results.md).
 
 ---
 
@@ -133,28 +42,60 @@ dvc repro                     # re-run pipeline: preprocess → pretrain → fin
 
 | Phase | Scope | Status |
 |---|---|---|
-| 1 | Reproducible dev environment, CI, baseline EEGNet on BCI IV 2a | ✅ `v0.1.0` |
-| 2 | Masked autoencoder pretraining on TUH EEG, linear probing | 🚧 in progress |
-| 3 | C++ inference engine: ring buffer, SIMD, ONNX integration | ⏳ planned |
-| 4 | Helm chart, k3s deployment, Prometheus/Grafana | ⏳ planned |
-| 5 | Terraform (EKS + Jetson), shadow deployment, multi-burn-rate alerts | ⏳ planned |
+| 1 | Reproducible EEGNet supervised baseline | ✅ done — `v0.1.0` |
+| 2 | Self-supervised MAE pretraining, linear probe, fine-tune | ✅ done (target missed, documented) |
+| 3 | C++ SIMD-optimized inference engine, sub-10ms latency | ⏳ planned |
+| 4 | Kubernetes deployment + MLflow model registry | ⏳ planned |
+| 5 | Observability, drift detection, SLOs | ⏳ planned |
 
-Completed milestones are tagged on [Releases](https://github.com/YOUR_HANDLE/neurostream/releases). Full decision history in [`docs/adr/`](docs/adr/).
+Phases 3–5 are intent-level only — no detailed day-by-day plan exists yet. See [`docs/agents/06_PHASE_3_PLUS_PLAN.md`](docs/agents/06_PHASE_3_PLUS_PLAN.md) for what's decided so far (AVX2 SIMD, CMake/Ninja, ONNX export + parity gate against Phase 1/2 outputs) versus what isn't.
 
 ---
 
-## Results
+## Quickstart
 
-Full evaluation report, per-subject breakdowns, and ablations: [`docs/results.md`](docs/results.md).
+Requires [`uv`](https://docs.astral.sh/uv/) and Python 3.12. A CUDA GPU is recommended for pretraining/fine-tuning but not required for the baseline.
 
-| Method | BCI IV 2a accuracy | Labeled data used |
-|---|---|---|
-| EEGNet (baseline, this repo) | 69.2% | 100% |
-| Published EEGNet (Lawhern et al. 2018) | 71.1% | 100% |
-| NeuroStream MAE + linear probe | **72.0%** | 1% |
-| Supervised SOTA (FBCSP-CNN, 2023) | 77.4% | 100% |
+```bash
+git clone https://github.com/outsidermm/neurostream.git
+cd neurostream
+uv sync --all-groups
+```
 
-*Baseline number is mean of stratified 4-fold CV on session T across 9 subjects (run `b199cad`, EEGNet-8,2 at 128 Hz with `max_norm` constraints). Full per-subject breakdown and the debugging path to that number is in [`docs/phase-1-notes/`](docs/phase-1-notes/); architectural rationale in [`docs/adr/0001-use-eegnet-as-baseline.md`](docs/adr/0001-use-eegnet-as-baseline.md).*
+Run the test suite:
+
+```bash
+uv run pytest
+```
+
+Phase 1 — train/evaluate the EEGNet baseline via Hydra:
+
+```bash
+uv run python -m neurostream.training.train
+```
+
+Phase 2 — pretrain the MAE, then probe or fine-tune it (see each script's docstring for Hydra overrides):
+
+```bash
+./scripts/pretrain.sh
+uv run python -m scripts.linear_probe probe.pretrained_checkpoint=<path>
+uv run python -m scripts.finetune finetune.pretrained_checkpoint=<path>
+```
+
+The dev container (`.devcontainer/`) pins the CUDA/Python/Clang toolchain, including the C++ build tools Phase 3 will use.
+
+---
+
+## Tech stack
+
+| Layer | Tools |
+|---|---|
+| **ML** | PyTorch, Hydra, MNE-Python, MOABB, scikit-learn |
+| **Experiment tracking** | MLflow |
+| **Tooling** | `uv`, Ruff, mypy, pytest, pre-commit |
+| **Dev environment** | Docker dev container (CUDA + Python 3.12 + Clang 18 — Clang/CMake pinned ahead of Phase 3) |
+| **CI** | GitHub Actions — Ruff lint, mypy, pytest on every push/PR |
+| **Planned (Phases 3–5)** | C++20 + AVX2 SIMD, ONNX Runtime, Kubernetes/Helm, Prometheus/Grafana |
 
 ---
 
@@ -162,30 +103,37 @@ Full evaluation report, per-subject breakdowns, and ablations: [`docs/results.md
 
 ```
 neurostream/
-├── .devcontainer/         Pinned CUDA + Python + Clang dev environment
-├── .github/workflows/     CI matrix, benchmark gates, release automation
-├── cpp/                   Inference engine (C++20, CMake, GoogleTest, Google Benchmark)
-├── python/src/            Training code, preprocessing, evaluation
-├── deploy/
-│   ├── docker/            Multi-stage Dockerfiles per deployment tier
-│   ├── helm/              Chart with HPA, probes, blue/green
-│   └── terraform/         AWS EKS + Jetson edge profiles
-├── observability/         Prometheus rules, Grafana dashboards (JSON, versioned)
-├── dvc.yaml               Pipeline: preprocess → pretrain → finetune → export → bench
-├── docker-compose.yml     Local stack: MLflow + MinIO + Prometheus + Grafana
-└── docs/
-    ├── architecture.md    System design and rationale
-    ├── benchmarks.md      Latency methodology and results
-    ├── slos.md            SLO definitions and burn-rate policy
-    ├── adr/               Architecture decision records
-    └── weekly-notes/      Development journal
+├── src/neurostream/
+│   ├── data/              Corpus + BCI IV 2a loaders, windowing, harmonisation
+│   ├── preprocessing/     Filtering, resampling, referencing, normalisation (pure functions —
+│   │                      deliberately, so Phase 3 can port + verify them step-by-step in C++)
+│   ├── models/            EEGNet, MAE encoder/decoder, patch + positional embeddings
+│   ├── training/          Training loops: baseline, MAE pretraining, linear probe, fine-tune
+│   └── eval/               Evaluation reporting
+├── scripts/               CLI entry points (pretrain, fine-tune, linear probe, corpus ingestion)
+├── configs/               Hydra configs (model, data, train, probe)
+├── tests/                 Mirrors src/ layout — TDD throughout
+├── notebooks/             Data sanity checks
+├── docs/
+│   ├── agents/            Forward-looking plan (phase specs, architecture decisions, setup)
+│   ├── phase-1-notes/     Phase 1 debugging log (paper-faithful reproduction, etc.)
+│   ├── phase-2-notes/     Phase 2 status snapshot, fine-tune results, ablations
+│   └── adr/               Architecture decision records
+└── .devcontainer/         Pinned CUDA + Python + Clang dev environment
 ```
 
 ---
 
-## Development journal
+## Documentation
 
-Weekly notes documenting decisions, dead ends, and lessons learned throughout the build: [`docs/weekly-notes/`](docs/weekly-notes/). Architecture decisions are captured separately as ADRs in [`docs/adr/`](docs/adr/).
+Start at [`docs/agents/00_INDEX.md`](docs/agents/00_INDEX.md) for the full plan structure. Key pointers:
+
+- [`docs/agents/01_PROJECT_OVERVIEW.md`](docs/agents/01_PROJECT_OVERVIEW.md) — what this project is and who it's for
+- [`docs/phase-2-notes/phase-2-status.md`](docs/phase-2-notes/phase-2-status.md) — current point-in-time status
+- [`docs/adr/`](docs/adr/) — architecture decisions (why MAE over contrastive methods, why EEGNet as baseline, etc.)
+- [`docs/phase-1-notes/`](docs/phase-1-notes/) and [`docs/phase-2-notes/`](docs/phase-2-notes/) — debugging journals
+
+When plan docs and code disagree, the code is the source of truth — see the note at the top of [`docs/agents/00_INDEX.md`](docs/agents/00_INDEX.md).
 
 ---
 
@@ -195,4 +143,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-BCI Competition IV Dataset 2a (Graz University of Technology), TUH EEG Corpus (Temple University), and the EEGNet authors (Lawhern et al., 2018).
+BCI Competition IV Dataset 2a (Graz University of Technology) and the EEGNet authors (Lawhern et al., 2018).
